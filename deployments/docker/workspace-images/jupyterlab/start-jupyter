@@ -1,0 +1,12 @@
+#!/bin/sh
+# JupyterLab served behind the authenticated ITK Cloud app proxy.
+# ITK Cloud authorises the user (owner/editors only) and the app proxy adds
+# the per-container ITK_APP_TOKEN, so other processes that can reach the
+# loopback-published port cannot use the server without the token.
+BASE="${ITK_PROXY_BASE:-/}8888/"
+exec jupyter lab --no-browser --ip=0.0.0.0 --port=8888 \
+  --ServerApp.base_url="$BASE" \
+  --IdentityProvider.token="${ITK_APP_TOKEN:?ITK_APP_TOKEN is required}" \
+  --ServerApp.allow_origin="${ITK_APP_ORIGIN:-}" \
+  --ServerApp.trust_xheaders=True \
+  --ServerApp.root_dir=/home/itk

@@ -1,0 +1,6 @@
+{
+	"name": "itk-cloud-e2e",
+	"private": true,
+	"type": "module",
+	"description": "Browser end-to-end tests; run with `pnpm exec playwright test` from apps/web."
+}

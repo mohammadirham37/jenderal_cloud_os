@@ -1,0 +1,5190 @@
+openapi: 3.1.0
+info:
+  title: ITK Cloud API
+  version: 1.0.0
+  summary: REST API of ITK Cloud, the private cloud platform of the Informatics & Computer Engineering laboratory.
+  description: |
+    Contract for every route registered in `internal/app/api.go`. The Go handlers in
+    `internal/modules/**` are the source of truth; this document is derived from their
+    request structs (`json` tags), response structs and authorization checks.
+
+    ## Conventions
+
+    * All application endpoints live under `/api/v1`; health probes under `/health`.
+    * Successful responses use the envelope `{"data": ...}`. Paginated lists use
+      `{"data": [...], "meta": {"page", "per_page", "total"}}`.
+    * Errors always use `{"error": {"code", "message", "details"?, "request_id"?}}`.
+      `details` maps field names to messages (HTTP 422 `validation_failed`).
+    * JSON request bodies are decoded strictly: unknown fields are rejected (400) and the
+      body is limited to 1 MiB (uploads stream separately).
+    * Long-running operations (provisioning, lifecycle actions, backups, restores, database
+      provisioning) return **202 Accepted** with the current resource state; the work is
+      done by background jobs. Poll the resource (e.g. `GET /api/v1/workspaces/{id}`,
+      `pending_job` field) or `GET /api/v1/workspaces/{id}/jobs`.
+    * Every response carries `X-Request-ID` (a sane inbound `X-Request-ID` header is reused).
+
+    ## Authentication
+
+    Session cookie `itk_session` (HttpOnly, SameSite=Lax, Secure when `COOKIE_SECURE`).
+    Unsafe methods (POST, PUT, PATCH, DELETE) of an authenticated session must send the
+    per-session CSRF token from `GET /api/v1/auth/me` (`csrf_token`) in `X-CSRF-Token`; when
+    an `Origin` header is present it must equal the origin of `APP_BASE_URL`.
+    Sessions that still need MFA or a password change can only reach the endpoints listed
+    in docs/api.md (other requests return 403 `mfa_required` / `password_change_required`).
+
+    See docs/api.md for the human-oriented guide (permissions per endpoint, rate limits).
+  contact:
+    name: ITK Cloud administrators
+  license:
+    name: Proprietary – internal use
+    identifier: LicenseRef-ITK-Cloud-Proprietary
+servers:
+  - url: https://itk-cloud.local
+    description: Production console origin (APP_BASE_URL). Workspace app proxy routes are served only on APP_PROXY_ORIGIN.
+  - url: http://localhost:5173
+    description: Development (Vite dev server proxies /api and /health to the API on 127.0.0.1:8080).
+security:
+  - cookieAuth: []
+tags:
+  - name: Health
+    description: Liveness and readiness probes (no authentication).
+  - name: Config
+    description: Public, non-sensitive UI configuration.
+  - name: Auth
+    description: Login, logout, sessions, password change/reset and TOTP MFA.
+  - name: Dashboard
+    description: Dashboard summary and own resource usage.
+  - name: Users
+    description: User accounts (RBAC with role ranks).
+  - name: Roles
+    description: Roles and the permission catalog.
+  - name: Quotas
+    description: Quota packages.
+  - name: Projects
+    description: Projects, members and project activity.
+  - name: Templates
+    description: Workspace template catalog.
+  - name: Images
+    description: Container image allowlist.
+  - name: Workspaces
+    description: Workspace lifecycle, settings, members and jobs.
+  - name: Files
+    description: Workspace file manager (paths are workspace-relative).
+  - name: Terminals
+    description: Browser terminal sessions and the WebSocket relay.
+  - name: AppProxy
+    description: Authenticated reverse proxy to web apps inside workspaces (served only on APP_PROXY_ORIGIN).
+  - name: Containers
+    description: Containers belonging to workspaces.
+  - name: Databases
+    description: PostgreSQL databases for projects.
+  - name: GPU
+    description: GPU inventory, requests, approvals and allocations.
+  - name: Monitoring
+    description: Host/workload metrics, history, alerts, service status and failed jobs.
+  - name: Notifications
+    description: In-app notifications and administrator announcements.
+  - name: Admin
+    description: Audit log, agent status, platform settings, backups and emergency operations.
+
+paths:
+  # ---------------------------------------------------------------------------
+  # Health & config
+  # ---------------------------------------------------------------------------
+  /health/live:
+    get:
+      tags: [Health]
+      operationId: healthLive
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, const: ok }
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /health/ready:
+    get:
+      tags: [Health]
+      operationId: healthReady
+      summary: Readiness probe (database, Redis, migrations)
+      description: Returns 503 when PostgreSQL or Redis is unreachable or migrations are pending. Not wrapped in the data envelope.
+      security: []
+      responses:
+        '200':
+          description: Ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReady' }
+        '503':
+          description: Not ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReady' }
+  /api/v1/config:
+    get:
+      tags: [Config]
+      operationId: getPublicConfig
+      summary: Public UI configuration
+      security: []
+      responses:
+        '200':
+          description: Configuration.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/PublicConfig' }
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ---------------------------------------------------------------------------
+  # Auth
+  # ---------------------------------------------------------------------------
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Log in with username (or email) and password
+      description: |
+        Sets the `itk_session` cookie. If MFA is required the session starts unverified
+        (10 minute lifetime) and `mfa_required`/`mfa_verified` tell the client to call
+        `/auth/mfa/verify` or enroll via `/auth/mfa/setup`. Rate limited per IP (30 / 10 min)
+        and per username (10 / 15 min); fails closed (503) if Redis is unavailable.
+        Accounts are locked after `security.login_max_attempts` failures (HTTP 423).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in. `Set-Cookie` carries the session.
+          headers:
+            Set-Cookie:
+              description: '`itk_session=<token>; Path=/; HttpOnly; SameSite=Lax[; Secure]`'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeEnvelope' }
+        '401':
+          description: '`invalid_credentials` (identical for unknown users and wrong passwords).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '403':
+          description: '`account_suspended` or `csrf_failed` (foreign Origin).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '423':
+          description: '`account_locked` — too many failed attempts.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Request a password reset email
+      description: Always 202 (never reveals whether the account exists). A reset link is only sent when SMTP is configured; `email_delivery` reports that.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+      responses:
+        '202':
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      email_delivery: { type: boolean }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with a single-use reset token
+      description: The token comes from the URL fragment `#token=` of the reset link (valid 1 hour). All sessions of the user are revoked and the lockout is cleared.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, password]
+              properties:
+                token: { type: string, maxLength: 100 }
+                password: { $ref: '#/components/schemas/NewPassword' }
+      responses:
+        '204':
+          description: Password changed.
+        '400':
+          description: '`invalid_token` — invalid, used or expired token.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204':
+          description: Logged out; cookie cleared.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: Current user, permissions, MFA state and CSRF token
+      description: Reachable while MFA or a password change is pending.
+      responses:
+        '200':
+          description: Current session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      operationId: changePassword
+      summary: Change own password
+      description: Revokes all other sessions of the user. Rate limited (10 / 15 min per user).
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { $ref: '#/components/schemas/NewPassword' }
+      responses:
+        '204':
+          description: Changed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/mfa/setup:
+    post:
+      tags: [Auth]
+      operationId: mfaSetup
+      summary: Start TOTP enrollment
+      description: Creates (or replaces) an unconfirmed TOTP secret and returns it once. 409 if MFA is already enabled.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '200':
+          description: Secret for the authenticator app.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [secret, otpauth_uri]
+                    properties:
+                      secret: { type: string, description: Base32 secret (160 bit). }
+                      otpauth_uri: { type: string, description: 'otpauth://totp/... URI (SHA1, 6 digits, 30 s).' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/auth/mfa/enable:
+    post:
+      tags: [Auth]
+      operationId: mfaEnable
+      summary: Confirm TOTP enrollment and receive recovery codes
+      description: Returns 10 one-time recovery codes (shown once) and rotates the session (new cookie). Rate limited (10 / 10 min per user).
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MFACodeRequest' }
+      responses:
+        '200':
+          description: MFA enabled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [recovery_codes, me]
+                    properties:
+                      recovery_codes:
+                        type: array
+                        items: { type: string, examples: [ABCDE-FGHJK] }
+                      me: { $ref: '#/components/schemas/Me' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/mfa/verify:
+    post:
+      tags: [Auth]
+      operationId: mfaVerify
+      summary: Complete MFA for the current session
+      description: Accepts a TOTP `code` (replays of an already used time step are rejected) or a `recovery_code` (consumed). Rotates the session. Rate limited (10 / 10 min per user).
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MFACodeRequest' }
+      responses:
+        '200':
+          description: Session verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MeEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/mfa/disable:
+    post:
+      tags: [Auth]
+      operationId: mfaDisable
+      summary: Disable own MFA
+      description: Requires password and a current TOTP code. Forbidden when the user's role requires MFA and `security.require_mfa_for_admins` is on.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password, code]
+              properties:
+                password: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204':
+          description: MFA removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/auth/sessions:
+    get:
+      tags: [Auth]
+      operationId: listSessions
+      summary: List own active sessions (max 50)
+      responses:
+        '200':
+          description: Sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SessionView' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/auth/sessions/{id}:
+    delete:
+      tags: [Auth]
+      operationId: revokeSession
+      summary: Revoke one of own sessions
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Dashboard
+  # ---------------------------------------------------------------------------
+  /api/v1/dashboard:
+    get:
+      tags: [Dashboard]
+      operationId: getDashboard
+      summary: Dashboard summary for the current user
+      description: The `platform` block is included only for holders of `monitoring.view_host`.
+      responses:
+        '200':
+          description: Summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/DashboardSummary' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/me/usage:
+    get:
+      tags: [Dashboard]
+      operationId: getMyUsage
+      summary: Effective quota and current usage of the caller
+      responses:
+        '200':
+          description: Quota and usage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaUsageEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Users
+  # ---------------------------------------------------------------------------
+  /api/v1/users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List users (users.view)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Q'
+        - name: sort
+          in: query
+          description: Sort field, prefix `-` for descending.
+          schema:
+            type: string
+            enum: [username, -username, full_name, -full_name, created_at, -created_at, last_login_at, -last_login_at, email, -email]
+            default: username
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, suspended] }
+        - name: role
+          in: query
+          description: Role key filter.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Page of users.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Create a user (users.create)
+      description: |
+        Roles can only be granted when their rank is lower than the caller's highest rank
+        (equal rank allowed with `roles.manage`). Without `password` a 16-character temporary
+        password is generated and returned once; the user must change it at first login.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreateRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [user]
+                    properties:
+                      user: { $ref: '#/components/schemas/User' }
+                      temporary_password: { type: string, description: Present only when the password was generated. }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/users/lookup:
+    get:
+      tags: [Users]
+      operationId: lookupUsers
+      summary: Search active users for member pickers (users.lookup or users.view)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 64 }
+      responses:
+        '200':
+          description: Up to 10 matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 10
+                    items: { $ref: '#/components/schemas/UserRef' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Get a user (self or users.view)
+      description: Returns 404 (not 403) when the caller may not view the user.
+      responses:
+        '200':
+          description: User.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Update a user
+      description: |
+        Users may change their own `full_name`. Other fields need `users.update`; `roles`
+        needs `users.assign_roles` or `roles.manage` and cannot be changed on oneself.
+        The target must have a lower rank (equal with `roles.manage`). Changing roles revokes
+        all sessions of the target. `quota_key: ""` clears the explicit quota package.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserUpdateRequest' }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/users/{id}/suspend:
+    post:
+      tags: [Users]
+      operationId: suspendUser
+      summary: Suspend a user (users.suspend)
+      description: Revokes all sessions, schedules suspension of the user's running workspaces and closes their terminals. Not allowed on oneself or on equal/higher ranks.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/users/{id}/activate:
+    post:
+      tags: [Users]
+      operationId: activateUser
+      summary: Reactivate a suspended user (users.suspend)
+      description: Also clears a login lockout.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        description: An empty object `{}` is accepted.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/users/{id}/reset-password:
+    post:
+      tags: [Users]
+      operationId: adminResetPassword
+      summary: Issue a single-use password reset link (users.reset_password)
+      description: The link is returned to the administrator (to hand over out of band) and emailed when SMTP is configured. Revokes the target's sessions. Not allowed on oneself or equal/higher ranks.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Reset link.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [reset_link, expires_in_seconds, emailed]
+                    properties:
+                      reset_link: { type: string, format: uri, description: '`<APP_BASE_URL>/reset-password#token=<token>`' }
+                      expires_in_seconds: { type: integer, examples: [3600] }
+                      emailed: { type: boolean }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/users/{id}/reset-mfa:
+    post:
+      tags: [Users]
+      operationId: adminResetMFA
+      summary: Remove a user's MFA so they must re-enroll (users.reset_password)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3 }
+      responses:
+        '204':
+          description: MFA removed; sessions revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/users/{id}/usage:
+    get:
+      tags: [Users]
+      operationId: getUserUsage
+      summary: Quota and usage of a user (self or users.view)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Quota and usage.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaUsageEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Roles & permissions
+  # ---------------------------------------------------------------------------
+  /api/v1/roles:
+    get:
+      tags: [Roles]
+      operationId: listRoles
+      summary: List roles (roles.view, users.assign_roles or users.view)
+      responses:
+        '200':
+          description: Roles ordered by rank.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Role' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Roles]
+      operationId: createRole
+      summary: Create a custom role (roles.manage)
+      description: '`rank` must be between 1 and the caller''s own rank (exclusive).'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/roles/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Roles]
+      operationId: updateRole
+      summary: Update a role (roles.manage)
+      description: '`super_admin` cannot be modified; roles at or above the caller''s rank cannot be modified; `key` cannot change. `permissions` replaces the full set.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoleEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Roles]
+      operationId: deleteRole
+      summary: Delete a custom role without members (roles.manage)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/permissions:
+    get:
+      tags: [Roles]
+      operationId: listPermissions
+      summary: Permission catalog (roles.view or roles.manage)
+      responses:
+        '200':
+          description: Permissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Permission' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------------------
+  # Quotas
+  # ---------------------------------------------------------------------------
+  /api/v1/quotas:
+    get:
+      tags: [Quotas]
+      operationId: listQuotas
+      summary: List quota packages (quotas.view or quotas.manage)
+      responses:
+        '200':
+          description: Quota packages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Quota' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Quotas]
+      operationId: createQuota
+      summary: Create a quota package (quotas.manage)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuotaInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/quotas/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Quotas]
+      operationId: updateQuota
+      summary: Update a quota package (quotas.manage)
+      description: '`key` cannot change. `0` for `max_workspace_duration_min`/`idle_timeout_min` means "no limit" (stored as NULL). Existing workspaces keep the limits they were created with.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuotaInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuotaEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Quotas]
+      operationId: deleteQuota
+      summary: Delete an unused, non-default quota package (quotas.manage)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ---------------------------------------------------------------------------
+  # Projects
+  # ---------------------------------------------------------------------------
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects (own memberships; all with projects.view_all / projects.manage_all)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Q'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, -name, created_at, -created_at, updated_at, -updated_at]
+            default: name
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, archived] }
+        - name: mine
+          in: query
+          description: Only projects the caller is a member of.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Page of projects.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Project' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project (projects.create); the caller becomes owner
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/Project' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/projects/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Project detail (project role viewer or projects.view_all)
+      responses:
+        '200':
+          description: Project with members, usage and quota.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectDetailEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Projects]
+      operationId: updateProject
+      summary: Update a project (project role maintainer)
+      description: '`status` (archive) only by the owner or projects.manage_all; `quota_key` requires quotas.manage (`""` clears); `slug` cannot change.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectInput' }
+      responses:
+        '200':
+          description: Updated project detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectDetailEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Delete an empty project (owner or projects.manage_all)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/projects/{id}/members:
+    post:
+      tags: [Projects]
+      operationId: addProjectMember
+      summary: Add a member or change a member's role (project role maintainer)
+      description: Adding or changing maintainers requires the project owner (or projects.manage_all). The owner's role cannot be changed.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties:
+                user_id: { type: string, format: uuid }
+                username: { type: string, description: Alternative to user_id. }
+                role: { type: string, enum: [maintainer, member, viewer] }
+      responses:
+        '200':
+          description: Full member list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProjectMember' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/projects/{id}/members/{userId}:
+    delete:
+      tags: [Projects]
+      operationId: removeProjectMember
+      summary: Remove a member (maintainer; members may remove themselves)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/projects/{id}/activity:
+    get:
+      tags: [Projects]
+      operationId: getProjectActivity
+      summary: Last 100 audit entries for the project, its workspaces and databases (viewer)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Activity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActivityItem' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Templates & images
+  # ---------------------------------------------------------------------------
+  /api/v1/templates:
+    get:
+      tags: [Templates]
+      operationId: listTemplates
+      summary: List active templates with allowed images (templates.view or templates.manage)
+      parameters:
+        - name: all
+          in: query
+          description: With templates.manage, include inactive templates and non-allowed images.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Templates ordered by category and name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Template' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Templates]
+      operationId: createTemplate
+      summary: Create a template (templates.manage)
+      description: The image must be on the allowlist. The security profile is fixed to uid/gid 1000 with no-new-privileges and no added capabilities.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/templates/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Templates]
+      operationId: getTemplate
+      summary: Get a template (inactive ones only with templates.manage)
+      responses:
+        '200':
+          description: Template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Templates]
+      operationId: updateTemplate
+      summary: Update a template (templates.manage)
+      description: '`key` cannot change. Existing workspaces keep the limits they were created with.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/images:
+    get:
+      tags: [Images]
+      operationId: listImages
+      summary: List the image allowlist (images.view or images.manage)
+      responses:
+        '200':
+          description: Images.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Image' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Images]
+      operationId: createImage
+      summary: Add an image to the catalog (images.manage)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ImageInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImageEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/images/{id}:
+    patch:
+      tags: [Images]
+      operationId: updateImage
+      summary: Update image metadata or allow/deny it (images.manage)
+      description: '`reference` cannot change; add a new image instead.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ImageInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImageEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/images/{id}/pull:
+    post:
+      tags: [Images]
+      operationId: pullImage
+      summary: Check the image on the host and pull it when missing (images.manage)
+      description: Synchronous (up to 20 minutes). Locally built `itk-cloud/*` images cannot be pulled; build them with installer/build-workspace-images.sh first.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Image with refreshed `pulled_at`/`size_bytes`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImageEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  # ---------------------------------------------------------------------------
+  # Workspaces
+  # ---------------------------------------------------------------------------
+  /api/v1/workspaces:
+    get:
+      tags: [Workspaces]
+      operationId: listWorkspaces
+      summary: List visible workspaces (workspaces.view_own, view_all or manage_all)
+      description: Without view_all/manage_all/access_all only owned workspaces, workspaces the caller is a member of and workspaces of the caller's projects are returned. `access` is the caller's effective level.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Q'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, -name, created_at, -created_at, status, -status, updated_at, -updated_at]
+            default: -created_at
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/WorkspaceStatus' }
+        - name: mine
+          in: query
+          schema: { type: boolean }
+        - name: owner_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: project_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Page of workspaces.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Workspace' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Workspaces]
+      operationId: createWorkspace
+      summary: Create a workspace (workspaces.create) — asynchronous
+      description: |
+        Validates quota (CPU/memory within the package, workspace/container count, allocated
+        storage, GPU-required templates) and schedules the `workspace.provision` job.
+        Returns 202 with status `requested`. Supports `Idempotency-Key`.
+        `type: native` requires WORKSPACE_NATIVE_ENABLED and the `workspaces.native` permission;
+        `owner_id` for another user requires `workspaces.manage_all`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceCreateRequest' }
+      responses:
+        '202':
+          description: 'Accepted; provisioning scheduled. A replayed request carries `Idempotent-Replay: true`.'
+          headers:
+            Idempotent-Replay:
+              description: '`true` when the stored response of an earlier request with the same key is returned.'
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Workspaces]
+      operationId: getWorkspace
+      summary: Workspace detail (view access)
+      description: 404 when the caller has no access at all (existence is not leaked); deleted workspaces are 404.
+      responses:
+        '200':
+          description: Detail with containers, template, members and grants.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/WorkspaceDetail' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Workspaces]
+      operationId: updateWorkspace
+      summary: Update workspace settings (manage access)
+      description: CPU/memory changes require a stopped workspace; the primary container is removed and recreated with the new limits on next start (data stays on the volume). `idle_timeout_min = 0` disables idle stop.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, minLength: 1, maxLength: 80 }
+                idle_timeout_min: { type: integer, description: '0 (disabled) or 5–10080.' }
+                cpu_millis: { type: integer, description: Between the template minimum and the owner's quota. }
+                memory_bytes: { type: integer, format: int64, description: Between the template minimum and the owner's quota. }
+      responses:
+        '200':
+          description: Updated detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/WorkspaceDetail' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      tags: [Workspaces]
+      operationId: deleteWorkspace
+      summary: Delete a workspace — asynchronous
+      description: Owner with workspaces.delete, or manage access with workspaces.manage_all. Allowed from ready, stopped, suspended and failed. Status becomes `deleting`; the `workspace.delete` job removes containers, network, storage and releases GPU allocations.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - name: reason
+          in: query
+          schema: { type: string }
+      responses:
+        '202':
+          description: Deletion scheduled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/workspaces/{id}/start:
+    post:
+      tags: [Workspaces]
+      operationId: startWorkspace
+      summary: Start a workspace (operate access) — asynchronous
+      description: Checks the running CPU/memory quota of the owner (and project) and host capacity (memory ≤ 90 % of RAM, CPU ≤ `scheduler.cpu_overcommit_pct`). Starting a suspended workspace requires workspaces.manage_all.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalReason'
+      responses:
+        '202':
+          $ref: '#/components/responses/WorkspaceAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/workspaces/{id}/stop:
+    post:
+      tags: [Workspaces]
+      operationId: stopWorkspace
+      summary: Stop a running workspace (operate access) — asynchronous
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalReason'
+      responses:
+        '202':
+          $ref: '#/components/responses/WorkspaceAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/restart:
+    post:
+      tags: [Workspaces]
+      operationId: restartWorkspace
+      summary: Restart a running workspace (operate access) — asynchronous
+      description: The primary container is stopped and started so GPU allocation changes are applied.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalReason'
+      responses:
+        '202':
+          $ref: '#/components/responses/WorkspaceAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/suspend:
+    post:
+      tags: [Workspaces]
+      operationId: suspendWorkspace
+      summary: Suspend a running workspace (workspaces.manage_all, reason required) — asynchronous
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '202':
+          $ref: '#/components/responses/WorkspaceAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/retry:
+    post:
+      tags: [Workspaces]
+      operationId: retryWorkspace
+      summary: Retry provisioning of a failed workspace (manage access) — asynchronous
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalReason'
+      responses:
+        '202':
+          $ref: '#/components/responses/WorkspaceAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/jobs:
+    get:
+      tags: [Workspaces]
+      operationId: listWorkspaceJobs
+      summary: Last 20 lifecycle jobs of the workspace and its containers (view access)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Jobs, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkspaceJob' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/workspaces/{id}/members:
+    post:
+      tags: [Workspaces]
+      operationId: addWorkspaceMember
+      summary: Add or update a workspace member (manage access)
+      description: '`viewer` sees metadata; `editor` additionally operates the workspace and accesses terminal, files and apps.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user_id, role]
+              properties:
+                user_id: { type: string, format: uuid }
+                role: { type: string, enum: [viewer, editor] }
+      responses:
+        '200':
+          description: Full member list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkspaceMember' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/members/{userId}:
+    delete:
+      tags: [Workspaces]
+      operationId: removeWorkspaceMember
+      summary: Remove a workspace member (manage access); closes their terminals
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Files (files.manage + edit access; X-Access-Reason for emergency access)
+  # ---------------------------------------------------------------------------
+  /api/v1/workspaces/{id}/files:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/AccessReason'
+    get:
+      tags: [Files]
+      operationId: listFiles
+      summary: List a directory (max 5000 entries)
+      description: Requires files.manage and edit access; workspace must be ready, running or stopped (409 otherwise).
+      parameters:
+        - $ref: '#/components/parameters/FilePath'
+      responses:
+        '200':
+          description: Directory listing (directories first).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [path, entries, truncated]
+                    properties:
+                      path: { type: string }
+                      entries:
+                        type: array
+                        items: { $ref: '#/components/schemas/FileEntry' }
+                      truncated: { type: boolean }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    delete:
+      tags: [Files]
+      operationId: deleteFile
+      summary: Delete a file or directory (audited)
+      description: Non-empty directories need `recursive=true` (409 otherwise). The workspace root cannot be deleted (422).
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 4096 }
+        - name: recursive
+          in: query
+          schema: { type: boolean }
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/files/stat:
+    get:
+      tags: [Files]
+      operationId: statFile
+      summary: Describe a path (does not follow a final symlink)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/AccessReason'
+        - $ref: '#/components/parameters/FilePath'
+      responses:
+        '200':
+          description: Entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/FileEntry' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/files/content:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/AccessReason'
+    get:
+      tags: [Files]
+      operationId: readFileContent
+      summary: Read a text file for the browser editor (≤ EDITOR_MAX_BYTES)
+      description: Only supported text extensions/names; binary content returns 415 `binary_file`, unsupported types 415 `unsupported_file_type`, oversize 413.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 4096 }
+      responses:
+        '200':
+          description: File content.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/FileContent' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    put:
+      tags: [Files]
+      operationId: writeFileContent
+      summary: Save a text file from the editor (atomic replace)
+      description: With `expected_mod_time` the write fails with 409 if the file changed since it was read. `create` allows creating a new file.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path, content]
+              properties:
+                path: { type: string, minLength: 1, maxLength: 4096 }
+                content: { type: string, description: At most EDITOR_MAX_BYTES (default 1 MiB). }
+                expected_mod_time: { type: string, format: date-time }
+                create: { type: boolean }
+      responses:
+        '200':
+          description: Saved entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/FileEntry' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '507':
+          $ref: '#/components/responses/InsufficientStorage'
+  /api/v1/workspaces/{id}/files/upload:
+    post:
+      tags: [Files]
+      operationId: uploadFiles
+      summary: Upload files (multipart, streamed to the agent; audited)
+      description: Each `file` part (max 100 per request) is written into `path` (a directory). Each file is limited to UPLOAD_MAX_BYTES. Existing files are not replaced unless `overwrite=true` (409).
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/AccessReason'
+        - name: path
+          in: query
+          description: Destination directory ("" = workspace root).
+          schema: { type: string, maxLength: 4096 }
+        - name: overwrite
+          in: query
+          schema: { type: boolean }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: array
+                  items: { type: string, contentMediaType: application/octet-stream }
+      responses:
+        '201':
+          description: Uploaded entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FileEntry' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '507':
+          $ref: '#/components/responses/InsufficientStorage'
+  /api/v1/workspaces/{id}/files/download:
+    get:
+      tags: [Files]
+      operationId: downloadFile
+      summary: Download a regular file (streamed)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/AccessReason'
+        - name: path
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 4096 }
+      responses:
+        '200':
+          description: 'File bytes with `Content-Disposition: attachment`.'
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, contentMediaType: application/octet-stream }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/files/mkdir:
+    post:
+      tags: [Files]
+      operationId: makeDirectory
+      summary: Create a directory (parent must exist)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/AccessReason'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path]
+              properties:
+                path: { type: string, minLength: 1, maxLength: 4096 }
+      responses:
+        '201':
+          description: Created directory entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/FileEntry' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/workspaces/{id}/files/rename:
+    patch:
+      tags: [Files]
+      operationId: renameFile
+      summary: Rename or move within the workspace (audited)
+      description: The destination must not exist; a folder cannot be moved into itself.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/AccessReason'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [from, to]
+              properties:
+                from: { type: string, minLength: 1 }
+                to: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Entry at the new path.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/FileEntry' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  # ---------------------------------------------------------------------------
+  # Terminals
+  # ---------------------------------------------------------------------------
+  /api/v1/workspaces/{id}/terminals:
+    post:
+      tags: [Terminals]
+      operationId: createTerminal
+      summary: Create a terminal session (terminals.open + edit access)
+      description: |
+        The workspace must be running. Limited by the quota's `max_terminal_sessions`.
+        Emergency access (workspaces.access_all) requires `X-Access-Reason`; the reason is
+        stored with the session and reused on reconnect. Session lifetime is
+        TERMINAL_SESSION_TTL_MINUTES.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/AccessReason'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                container_id: { type: string, format: uuid, description: Defaults to the primary running container. }
+                cols: { type: integer, minimum: 10, maximum: 1000, default: 120 }
+                rows: { type: integer, minimum: 5, maximum: 500, default: 32 }
+      responses:
+        '201':
+          description: Session created (status `pending`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/TerminalSession' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/terminals:
+    get:
+      tags: [Terminals]
+      operationId: listTerminals
+      summary: Own open sessions and sessions ended in the last hour (max 50)
+      responses:
+        '200':
+          description: Sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/TerminalSession' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/terminals/{id}:
+    delete:
+      tags: [Terminals]
+      operationId: closeTerminal
+      summary: Close own terminal session
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Closed (an attached relay notices within 15 s).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/terminals/{id}/ws:
+    get:
+      tags: [Terminals]
+      operationId: terminalWebSocket
+      summary: Attach to a terminal session (WebSocket upgrade)
+      description: |
+        WebSocket endpoint (`wss://<host>/api/v1/terminals/{id}/ws`). Authenticated with the
+        session cookie; the `Origin` must be the APP_BASE_URL host. No secrets are passed in
+        the query string. On every (re)connect the API re-validates the terminal session
+        (owner, not expired/closed), the workspace access level (edit) and that the workspace
+        is running. Each reconnect starts a **new shell**.
+
+        Frames: binary frames carry raw terminal bytes in both directions. Text frames from
+        the client carry JSON control messages: `{"type":"resize","cols":N,"rows":N}` or
+        `{"type":"ping"}`. The relay re-checks every 15 s that the terminal session is not
+        closed, the login session is still valid and the workspace is running.
+        Close reasons include `expired`, `session_closed`, `login_session_ended`,
+        `workspace_stopped`, `shell_exited`, `idle_timeout`, `max_duration`.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: Upgrade
+          in: header
+          required: true
+          schema: { type: string, const: websocket }
+      responses:
+        '101':
+          description: Switching protocols; the WebSocket relay is established.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: '`terminal_session_ended` — open a new terminal.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  # ---------------------------------------------------------------------------
+  # App proxy (only on APP_PROXY_ORIGIN)
+  # ---------------------------------------------------------------------------
+  /api/v1/workspaces/{id}/proxy/{port}:
+    get:
+      tags: [AppProxy]
+      operationId: appProxyRedirect
+      summary: Redirect to the trailing-slash form of the app URL
+      description: Any method is accepted; the response is always a 302 to `.../proxy/{port}/`.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/ProxyPort'
+      responses:
+        '302':
+          description: Redirect.
+          headers:
+            Location:
+              schema: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/workspaces/{id}/proxy/{port}/{path}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/ProxyPort'
+      - $ref: '#/components/parameters/ProxyPath'
+    get:
+      tags: [AppProxy]
+      operationId: appProxyGet
+      summary: Proxy a request to a web app in the workspace
+      description: |
+        Served **only** when the request Host equals APP_PROXY_ORIGIN (404 on the console
+        origin; 503 when APP_PROXY_ORIGIN is empty). Requires edit access as owner or editor
+        (emergency access is refused). The workspace must be running and the port must be a
+        published template port of a running container. The upstream is
+        `127.0.0.1:<loopback host port>`. The `itk_session` cookie, `X-CSRF-Token` and
+        `Authorization` are stripped before forwarding; `Set-Cookie: itk_session=...` from
+        the app is dropped. All HTTP methods (and WebSocket upgrades) are forwarded; CSRF
+        token checks do not apply to this path. Response bodies are whatever the app returns.
+      responses:
+        '200':
+          description: Upstream response (any status code is passed through).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          description: '`app_unreachable` — nothing is listening on the port.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      tags: [AppProxy]
+      operationId: appProxyPost
+      summary: Proxy a POST request to a web app in the workspace
+      description: See `appProxyGet`.
+      responses:
+        '200':
+          description: Upstream response.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: '`app_unreachable`.'
+    put:
+      tags: [AppProxy]
+      operationId: appProxyPut
+      summary: Proxy a PUT request to a web app in the workspace
+      description: See `appProxyGet`.
+      responses:
+        '200':
+          description: Upstream response.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [AppProxy]
+      operationId: appProxyPatch
+      summary: Proxy a PATCH request to a web app in the workspace
+      description: See `appProxyGet`.
+      responses:
+        '200':
+          description: Upstream response.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [AppProxy]
+      operationId: appProxyDelete
+      summary: Proxy a DELETE request to a web app in the workspace
+      description: See `appProxyGet`.
+      responses:
+        '200':
+          description: Upstream response.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Containers
+  # ---------------------------------------------------------------------------
+  /api/v1/containers:
+    get:
+      tags: [Containers]
+      operationId: listContainers
+      summary: List containers of visible workspaces
+      description: Without containers.manage_all / workspaces.view_all / workspaces.manage_all only containers of owned, member or project workspaces are returned.
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Q'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [name, -name, created_at, -created_at, status, -status]
+            default: -created_at
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ContainerStatus' }
+        - name: workspace_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: mine
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Page of containers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Container' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Containers]
+      operationId: createContainer
+      summary: Add a container to a workspace (containers.create + edit access) — asynchronous
+      description: The additional container shares the workspace volume (`/home/itk`) and network. Counts toward `max_containers`. Supports `Idempotency-Key`.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/AccessReason'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workspace_id, template_id, name]
+              properties:
+                workspace_id: { type: string, format: uuid }
+                template_id: { type: string, format: uuid }
+                name: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$' }
+                cpu_millis: { type: integer, description: Defaults to the template recommendation. }
+                memory_bytes: { type: integer, format: int64, description: Defaults to the template recommendation. }
+      responses:
+        '202':
+          description: Container recorded; `container.create` job scheduled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContainerEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/containers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Containers]
+      operationId: getContainer
+      summary: Container detail with live runtime state and stats (view access)
+      responses:
+        '200':
+          description: Detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/ContainerDetail' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Containers]
+      operationId: deleteContainer
+      summary: Remove an additional (non-primary) container (edit access) — asynchronous
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/AccessReason'
+      responses:
+        '204':
+          description: Removal scheduled (`container.remove` job).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/containers/{id}/logs:
+    get:
+      tags: [Containers]
+      operationId: getContainerLogs
+      summary: Recent container log lines (operate access or containers.manage_all)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: tail
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 5000, default: 200 }
+        - name: timestamps
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Log lines (agent truncates at 4 MiB).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/LogsResult' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/containers/{id}/start:
+    post:
+      tags: [Containers]
+      operationId: startContainer
+      summary: Start a container (operate access + containers.stop or containers.manage_all) — asynchronous
+      description: Checks quota and host capacity like a workspace start.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '202':
+          $ref: '#/components/responses/ContainerAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/containers/{id}/stop:
+    post:
+      tags: [Containers]
+      operationId: stopContainer
+      summary: Stop a container — asynchronous
+      description: Stopping the last running container marks the workspace stopped.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '202':
+          $ref: '#/components/responses/ContainerAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/containers/{id}/restart:
+    post:
+      tags: [Containers]
+      operationId: restartContainer
+      summary: Restart a running container — asynchronous
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '202':
+          $ref: '#/components/responses/ContainerAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ---------------------------------------------------------------------------
+  # Databases
+  # ---------------------------------------------------------------------------
+  /api/v1/databases:
+    get:
+      tags: [Databases]
+      operationId: listDatabases
+      summary: List project databases (own projects; all with databases.manage_all / projects.view_all)
+      parameters:
+        - name: project_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Databases and whether the feature is configured (PROJECT_DB_ADMIN_URL).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [databases, enabled]
+                    properties:
+                      databases:
+                        type: array
+                        items: { $ref: '#/components/schemas/Database' }
+                      enabled: { type: boolean }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Databases]
+      operationId: createDatabase
+      summary: Create a project database (databases.create + project maintainer) — asynchronous
+      description: Returns the generated credentials **once**. Checks the creator's `max_databases` and the project quota. Supports `Idempotency-Key`. 503 when PROJECT_DB_ADMIN_URL is not configured.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [project_id, display_name]
+              properties:
+                project_id: { type: string, format: uuid }
+                display_name: { type: string, minLength: 1, maxLength: 80 }
+                connection_limit: { type: integer, minimum: 1, maximum: 200, default: 20 }
+      responses:
+        '202':
+          description: Database recorded (status `provisioning`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [database, credentials]
+                    properties:
+                      database: { $ref: '#/components/schemas/Database' }
+                      credentials: { $ref: '#/components/schemas/DatabaseCredentials' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/databases/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Databases]
+      operationId: getDatabase
+      summary: Get a database (project role member or databases.manage_all); never includes the password
+      responses:
+        '200':
+          description: Database.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/Database' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Databases]
+      operationId: deleteDatabase
+      summary: Drop a database (maintainer + databases.delete or databases.manage_all) — asynchronous
+      description: '`confirm` must equal the database name (`db_name`). Allowed from ready or failed.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Deletion scheduled (`database.delete` job).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/databases/{id}/credentials/reset:
+    post:
+      tags: [Databases]
+      operationId: resetDatabaseCredentials
+      summary: Generate a new password (project maintainer); returned once
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: New credentials.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/DatabaseCredentials' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+  # ---------------------------------------------------------------------------
+  # GPU
+  # ---------------------------------------------------------------------------
+  /api/v1/gpu/devices:
+    get:
+      tags: [GPU]
+      operationId: listGPUDevices
+      summary: GPU inventory (gpu.view, gpu.manage or gpu.approve)
+      description: Live processes are included for gpu.manage, gpu.approve or monitoring.view_host.
+      responses:
+        '200':
+          description: Inventory.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/GPUDevicesResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/gpu/devices/{id}:
+    patch:
+      tags: [GPU]
+      operationId: updateGPUDevice
+      summary: Set allocation policy / disable a GPU (gpu.manage)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                allocation_policy: { type: string, enum: [exclusive, shared, disabled] }
+                max_shared: { type: integer, minimum: 1, maximum: 16 }
+                disabled: { type: boolean }
+      responses:
+        '200':
+          description: Updated device.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/GPUDevice' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/gpu/requests:
+    get:
+      tags: [GPU]
+      operationId: listGPURequests
+      summary: GPU requests (own; all with gpu.approve) — max 200
+      parameters:
+        - name: mine
+          in: query
+          schema: { type: boolean }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected, cancelled] }
+      responses:
+        '200':
+          description: Requests, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/GPURequest' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [GPU]
+      operationId: createGPURequest
+      summary: Request GPU access for a container workspace (gpu.request + edit access)
+      description: Requires GPU_ENABLED (503 otherwise) and a quota package with `gpu_allowed`. One pending request per workspace. `shared` mode only when `gpu.allow_shared` is on.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [workspace_id, duration_hours, reason]
+              properties:
+                workspace_id: { type: string, format: uuid }
+                gpu_device_id: { type: string, format: uuid }
+                mode: { type: string, enum: [exclusive, shared], default: exclusive }
+                duration_hours: { type: integer, minimum: 1, description: 'At most `gpu.max_duration_hours` (default 72).' }
+                reason: { type: string, minLength: 10, maxLength: 2000 }
+      responses:
+        '201':
+          description: Request created; approvers are notified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GPURequestEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/gpu/requests/{id}/approve:
+    post:
+      tags: [GPU]
+      operationId: approveGPURequest
+      summary: Approve and allocate a GPU (gpu.approve; own requests only with gpu.manage)
+      description: Picks (or validates) a device for the mode; a running workspace is restarted to attach the GPU. `duration_hours` may only shorten the request.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GPUReviewInput' }
+      responses:
+        '200':
+          description: Approved request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GPURequestEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/gpu/requests/{id}/reject:
+    post:
+      tags: [GPU]
+      operationId: rejectGPURequest
+      summary: Reject a pending request (gpu.approve; note required)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GPUReviewInput' }
+      responses:
+        '200':
+          description: Rejected request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GPURequestEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/gpu/requests/{id}/cancel:
+    post:
+      tags: [GPU]
+      operationId: cancelGPURequest
+      summary: Cancel own pending request
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/gpu/allocations:
+    get:
+      tags: [GPU]
+      operationId: listGPUAllocations
+      summary: GPU allocations (own; all with gpu.approve, gpu.manage or monitoring.view_host) — max 200
+      parameters:
+        - name: status
+          in: query
+          description: '`active` limits to active allocations; otherwise history is included.'
+          schema: { type: string, enum: [active] }
+        - name: mine
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Allocations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/GPUAllocation' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/gpu/allocations/{id}/release:
+    post:
+      tags: [GPU]
+      operationId: releaseGPUAllocation
+      summary: Release an allocation (its user, gpu.approve or gpu.manage)
+      description: A running workspace is restarted to detach the GPU.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        $ref: '#/components/requestBodies/OptionalReason'
+      responses:
+        '200':
+          description: Released allocation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/GPUAllocation' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # ---------------------------------------------------------------------------
+  # Monitoring
+  # ---------------------------------------------------------------------------
+  /api/v1/monitoring/host:
+    get:
+      tags: [Monitoring]
+      operationId: getHostMetrics
+      summary: Live host metrics, falling back to the last stored sample (monitoring.view_host)
+      description: When the agent does not respond, `live` is false and `last_sample` holds the most recent stored sample (or `available` is false). Numbers are never invented.
+      responses:
+        '200':
+          description: Metrics.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/HostMonitoring' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/monitoring/workspaces/{id}:
+    get:
+      tags: [Monitoring]
+      operationId: getWorkspaceMetrics
+      summary: Live container stats of a workspace (operate access)
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Workspace metrics.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/WorkspaceMetrics' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/monitoring/gpu:
+    get:
+      tags: [Monitoring]
+      operationId: getGPUMetrics
+      summary: Live GPU inventory/metrics (monitoring.view_host or gpu.view)
+      description: Process details are removed for callers without monitoring.view_host.
+      responses:
+        '200':
+          description: GPU inventory; `available=false` with `error` when unavailable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/GPUInventory' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/monitoring/history:
+    get:
+      tags: [Monitoring]
+      operationId: getMetricsHistory
+      summary: Bucketed metric history
+      description: |
+        `host` requires monitoring.view_host; `gpu` requires monitoring.view_host or gpu.view
+        (`ref` = GPU UUID); `workspace`/`container` require operate access to the workspace
+        (or monitoring.view_host). Bucket sizes: 1h→60 s, 6h→300 s, 24h→900 s, 7d→3600 s, 14d→7200 s.
+      parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [host, workspace, container, gpu], default: host }
+        - name: ref
+          in: query
+          description: Workspace/container UUID or GPU UUID; ignored for host.
+          schema: { type: string }
+        - name: range
+          in: query
+          schema: { type: string, enum: [1h, 6h, 24h, 7d, 14d], default: 1h }
+      responses:
+        '200':
+          description: History.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/MetricsHistory' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/monitoring/alerts:
+    get:
+      tags: [Monitoring]
+      operationId: listAlerts
+      summary: Alerts, firing first (monitoring.view_host) — max 200
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [firing] }
+      responses:
+        '200':
+          description: Alerts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Alert' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/monitoring/alerts/{id}/ack:
+    post:
+      tags: [Monitoring]
+      operationId: acknowledgeAlert
+      summary: Acknowledge an alert (monitoring.view_host)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Acknowledged.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/monitoring/services:
+    get:
+      tags: [Monitoring]
+      operationId: getServiceStatus
+      summary: Platform service health, queue, last backup and container counts (monitoring.view_host or host.operations.view)
+      responses:
+        '200':
+          description: Service status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/ServicesStatus' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/monitoring/jobs:
+    get:
+      tags: [Monitoring]
+      operationId: listJobs
+      summary: Background jobs by status (monitoring.view_host) — max 100
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [dead, queued, running], default: dead }
+      responses:
+        '200':
+          description: Jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/JobRecord' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/monitoring/jobs/{id}/retry:
+    post:
+      tags: [Monitoring]
+      operationId: retryJob
+      summary: Re-queue a dead job (settings.manage or workspaces.manage_all)
+      description: Resets attempts to 0 and runs the job immediately.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Re-queued.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Notifications & announcements
+  # ---------------------------------------------------------------------------
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: Own notifications, newest first
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: unread
+          in: query
+          schema: { type: boolean }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/NotificationType' }
+      responses:
+        '200':
+          description: Page of notifications; `meta.unread` counts all unread notifications.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+                  meta:
+                    allOf:
+                      - $ref: '#/components/schemas/ListMeta'
+                      - type: object
+                        required: [unread]
+                        properties:
+                          unread: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      operationId: getUnreadCount
+      summary: Number of unread notifications
+      responses:
+        '200':
+          description: Count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [unread]
+                    properties:
+                      unread: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Mark all own notifications read
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark one own notification read
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/announcements:
+    get:
+      tags: [Notifications]
+      operationId: listAnnouncements
+      summary: Active announcements (all with ?all=true and announcements.manage) — max 50
+      parameters:
+        - name: all
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Announcements.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Announcement' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Notifications]
+      operationId: createAnnouncement
+      summary: Publish an announcement (announcements.manage)
+      description: 'With `notify: true` every active user also receives a `maintenance` notification.'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200 }
+                body: { type: string, maxLength: 5000 }
+                severity: { type: string, enum: [info, warning, critical], default: info }
+                starts_at: { type: string, format: date-time }
+                ends_at: { type: string, format: date-time }
+                notify: { type: boolean }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id]
+                    properties:
+                      id: { type: string, format: uuid }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/announcements/{id}:
+    delete:
+      tags: [Notifications]
+      operationId: deleteAnnouncement
+      summary: Delete an announcement (announcements.manage)
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------------------
+  # Administration
+  # ---------------------------------------------------------------------------
+  /api/v1/admin/audit-logs:
+    get:
+      tags: [Admin]
+      operationId: listAuditLogs
+      summary: Query the audit log (audit.view)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Q'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [occurred_at, -occurred_at, action, -action]
+            default: -occurred_at
+        - name: actor_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          description: Action, `*` acts as wildcard (e.g. `workspace.*`).
+          schema: { type: string }
+        - name: resource_type
+          in: query
+          schema: { type: string }
+        - name: resource_id
+          in: query
+          schema: { type: string }
+        - name: outcome
+          in: query
+          schema: { type: string, enum: [success, failure, denied] }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Page of audit entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditLog' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/admin/agent/status:
+    get:
+      tags: [Admin]
+      operationId: getAgentStatus
+      summary: Host agent status with a live check (agent.view or host.operations.view)
+      responses:
+        '200':
+          description: Agent status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/AgentStatus' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/settings:
+    get:
+      tags: [Admin]
+      operationId: getSettings
+      summary: Platform settings with schema and current values (settings.manage)
+      responses:
+        '200':
+          description: Settings sorted by category.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [Admin]
+      operationId: updateSettings
+      summary: Change settings (settings.manage)
+      description: Only declared keys; values are type- and range-checked. The change (from/to) is audited.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [values]
+              properties:
+                values:
+                  type: object
+                  minProperties: 1
+                  additionalProperties:
+                    type: [string, integer, boolean]
+            example:
+              values:
+                alerts.disk_pct: 85
+                backup.include_workspace_files: true
+      responses:
+        '200':
+          description: All settings after the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsEnvelope' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/admin/backups:
+    get:
+      tags: [Admin]
+      operationId: listBackups
+      summary: Backup jobs and backup configuration (backup.manage)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Page of backups plus `config`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta, config]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BackupJob' }
+                  meta: { $ref: '#/components/schemas/ListMeta' }
+                  config: { $ref: '#/components/schemas/BackupConfig' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags: [Admin]
+      operationId: createBackup
+      summary: Start a backup (backup.manage) — asynchronous
+      description: '`full` creates one job per kind (project_databases only when configured). 409 when BACKUP_AGE_RECIPIENT is not set (backups are always encrypted).'
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [kind]
+              properties:
+                kind: { type: string, enum: [full, platform_db, config, workspace_metadata, workspace_files, project_databases] }
+      responses:
+        '202':
+          description: Backup jobs created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [backup_ids]
+                    properties:
+                      backup_ids:
+                        type: array
+                        items: { type: string, format: uuid }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/admin/backups/{id}/restore:
+    post:
+      tags: [Admin]
+      operationId: restoreBackup
+      summary: Restore or verify a backup (backup.manage) — asynchronous
+      description: |
+        `workspace_files` and `project_databases` are restored (project database restores need
+        `database_id`); `platform_db`, `config` and `workspace_metadata` are only **verified**
+        (decrypt + checksum, `pg_restore --list` for the platform dump) — live restore of those
+        is CLI-only. `confirm` must equal the backup `file_name`. The age private key is
+        encrypted with the platform key inside the single-attempt restore job and scrubbed
+        from the job payload when the job finishes.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm, age_identity, reason]
+              properties:
+                confirm: { type: string, description: Must equal the backup file name. }
+                age_identity: { type: string, pattern: '^AGE-SECRET-KEY-', description: The offline age private key. }
+                mode: { type: string, enum: [restore, verify], default: restore }
+                workspace_id: { type: string, format: uuid, description: workspace_files only — restore a single workspace. }
+                database_id: { type: string, format: uuid, description: Required to restore a project database. }
+                reason: { type: string, minLength: 5 }
+      responses:
+        '202':
+          description: Restore queued; poll `restore_status`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/BackupJob' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /api/v1/admin/host/emergency-stop:
+    post:
+      tags: [Admin]
+      operationId: emergencyStop
+      summary: Stop all managed containers (host.operations.execute)
+      description: Requires the confirmation phrase `STOP ALL WORKLOADS` and a reason of at least 10 characters. Running workspaces become `stopped`, terminals close, every user is notified. Denied attempts are audited.
+      security:
+        - cookieAuth: []
+          csrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm, reason]
+              properties:
+                confirm: { type: string, const: STOP ALL WORKLOADS }
+                reason: { type: string, minLength: 10 }
+      responses:
+        '200':
+          description: Result reported by the agent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      stopped: { type: integer }
+                      failed: { type: integer }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: itk_session
+      description: Opaque session token (32 random bytes); only its SHA-256 is stored server-side.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Per-session CSRF token (`csrf_token` of GET /api/v1/auth/me). Required with the session cookie on POST/PUT/PATCH/DELETE.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      description: Resource UUID (a malformed UUID yields 404).
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Q:
+      name: q
+      in: query
+      description: Case-insensitive substring search (max 100 characters).
+      schema: { type: string, maxLength: 100 }
+    FilePath:
+      name: path
+      in: query
+      description: Workspace-relative path; "" or "/" is the workspace root. `..` segments, NUL bytes and paths longer than 4096 bytes are rejected.
+      schema: { type: string, maxLength: 4096 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: '8–100 characters. A repeated request with the same key by the same user within 24 h replays the stored 2xx response (`Idempotent-Replay: true`); reusing it for a different method/path returns 409.'
+      schema: { type: string, minLength: 8, maxLength: 100 }
+    AccessReason:
+      name: X-Access-Reason
+      in: header
+      required: false
+      description: Justification (≥ 10 characters) required when a holder of `workspaces.access_all` accesses data of a workspace they do not own or edit (emergency access). Audited as `workspace.emergency_access`.
+      schema: { type: string, minLength: 10 }
+    ProxyPort:
+      name: port
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1024, maximum: 65535 }
+    ProxyPath:
+      name: path
+      in: path
+      required: true
+      description: Remainder of the URL path (may contain `/`; matched by Go's `{rest...}` wildcard).
+      schema: { type: string }
+
+  requestBodies:
+    OptionalReason:
+      required: false
+      description: Optional; the body may be omitted.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              reason: { type: string, maxLength: 500 }
+
+  responses:
+    BadRequest:
+      description: '`bad_request` — malformed JSON, unknown field, invalid multipart.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unauthorized:
+      description: '`unauthorized` — no valid session.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Forbidden:
+      description: '`forbidden`, `csrf_failed`, `mfa_required`, `password_change_required` or `emergency_reason_required`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    NotFound:
+      description: '`not_found` — also returned when the caller has no access to the resource.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Conflict:
+      description: '`conflict` — invalid state transition, operation already in progress, duplicate.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    ValidationFailed:
+      description: '`validation_failed` (field `details`) or `quota_exceeded`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example:
+            error:
+              code: validation_failed
+              message: Some fields are invalid.
+              details:
+                cpu_millis: must be between 500 (template minimum) and 1000 (your quota)
+              request_id: 9f2c1d0e8b7a4c3d2e1f0a9b8c7d6e5f
+    TooManyRequests:
+      description: '`rate_limited`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    Unavailable:
+      description: '`unavailable` (agent, Redis, feature not configured) or `insufficient_capacity`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`, `unsupported_file_type` or `binary_file`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    InsufficientStorage:
+      description: '`quota_exceeded` — workspace storage is full.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    InternalError:
+      description: '`internal_error` — details are only logged server-side.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    WorkspaceAccepted:
+      description: Accepted; the lifecycle job is queued. Returns the workspace with `pending_job`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/WorkspaceEnvelope' }
+    ContainerAccepted:
+      description: Accepted; the container job is queued.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ContainerEnvelope' }
+
+  schemas:
+    # ----- envelopes & common -----
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+              examples: [validation_failed, quota_exceeded, not_found]
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: { type: string }
+            request_id: { type: string }
+    ListMeta:
+      type: object
+      required: [page, per_page, total]
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+    HealthReady:
+      type: object
+      required: [status, checks, version]
+      properties:
+        status: { type: string, enum: [ready, not_ready] }
+        checks:
+          type: object
+          properties:
+            database: { type: string, enum: [ok, unavailable] }
+            redis: { type: string, enum: [ok, unavailable] }
+            migrations: { type: string, enum: [ok, pending] }
+        version: { type: string }
+    PublicConfig:
+      type: object
+      properties:
+        platform_name: { type: string }
+        version: { type: string }
+        app_proxy_origin: { type: string, description: Empty when the app proxy is disabled. }
+        upload_max_bytes: { type: integer, format: int64 }
+        editor_max_bytes: { type: integer, format: int64 }
+        gpu_enabled: { type: boolean }
+        native_workspaces: { type: boolean }
+        project_databases: { type: boolean }
+        email_enabled: { type: boolean }
+        terminal_ttl_minutes: { type: integer }
+    NewPassword:
+      type: string
+      minLength: 12
+      maxLength: 256
+      description: At least 12 characters with at least three of lowercase, uppercase, digits, symbols.
+
+    # ----- auth -----
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { type: string, maxLength: 254, description: Username or email (case-insensitive). }
+        password: { type: string, maxLength: 256 }
+    MFACodeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        code: { type: string, pattern: '^[0-9]{6}$' }
+        recovery_code: { type: string, description: Only for /auth/mfa/verify. }
+    Me:
+      type: object
+      required: [id, username, full_name, email, roles, permissions, mfa_enrolled, mfa_required, mfa_verified, mfa_setup_required, must_change_password, csrf_token, session_expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        full_name: { type: string }
+        email: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+        mfa_enrolled: { type: boolean }
+        mfa_required: { type: boolean }
+        mfa_verified: { type: boolean }
+        mfa_setup_required: { type: boolean }
+        must_change_password: { type: boolean }
+        csrf_token: { type: string }
+        session_expires_at: { type: string, format: date-time }
+    MeEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Me' }
+    SessionView:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        ip: { type: [string, 'null'] }
+        user_agent: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        current: { type: boolean }
+
+    # ----- users, roles, quotas -----
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        email: { type: string }
+        full_name: { type: string }
+        identity_number: { type: [string, 'null'], description: e.g. NIM/NIP. }
+        status: { type: string, enum: [active, suspended] }
+        suspended_reason: { type: [string, 'null'] }
+        must_change_password: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+        quota_id: { type: [string, 'null'], format: uuid }
+        quota_key: { type: [string, 'null'] }
+        mfa_enabled: { type: boolean }
+        last_login_at: { type: [string, 'null'], format: date-time }
+        locked_until: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UserEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/User' }
+    UserRef:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        full_name: { type: string }
+    UserCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [username, email, full_name, roles]
+      properties:
+        username: { type: string, pattern: '^[a-z][a-z0-9._-]{2,31}$' }
+        email: { type: string, format: email, maxLength: 254 }
+        full_name: { type: string, minLength: 1, maxLength: 200 }
+        identity_number: { type: [string, 'null'], maxLength: 50 }
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string }
+        quota_key: { type: [string, 'null'] }
+        password: { type: [string, 'null'], description: Optional; generated when omitted. }
+    UserUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email }
+        full_name: { type: string, minLength: 1, maxLength: 200 }
+        identity_number: { type: string, maxLength: 50, description: '"" clears.' }
+        quota_key: { type: string, description: '"" clears the explicit package.' }
+        roles:
+          type: array
+          minItems: 1
+          items: { type: string }
+    Role:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        is_system: { type: boolean }
+        requires_mfa: { type: boolean }
+        rank: { type: integer }
+        permissions:
+          type: array
+          items: { type: string }
+        user_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RoleEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Role' }
+    RoleInput:
+      type: object
+      additionalProperties: false
+      properties:
+        key: { type: string, pattern: '^[a-z][a-z0-9_]{1,40}$', description: Create only. }
+        name: { type: string, maxLength: 80 }
+        description: { type: string }
+        requires_mfa: { type: boolean }
+        rank: { type: integer, minimum: 1 }
+        permissions:
+          type: array
+          items: { type: string }
+    Permission:
+      type: object
+      properties:
+        key: { type: string, examples: [workspaces.create] }
+        category: { type: string }
+        description: { type: string }
+    Quota:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        cpu_millis: { type: integer, description: 1000 = one core. }
+        memory_bytes: { type: integer, format: int64 }
+        storage_bytes: { type: integer, format: int64 }
+        max_workspaces: { type: integer }
+        max_containers: { type: integer }
+        max_databases: { type: integer }
+        max_terminal_sessions: { type: integer }
+        gpu_allowed: { type: boolean }
+        max_workspace_duration_min: { type: [integer, 'null'] }
+        idle_timeout_min: { type: [integer, 'null'] }
+        user_count: { type: integer }
+        project_count: { type: integer }
+    QuotaEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Quota' }
+    QuotaInput:
+      type: object
+      additionalProperties: false
+      properties:
+        key: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{1,62}$', description: Create only. }
+        name: { type: string, maxLength: 80 }
+        description: { type: string }
+        cpu_millis: { type: integer, minimum: 100, maximum: 256000 }
+        memory_bytes: { type: integer, format: int64, minimum: 134217728, maximum: 2199023255552 }
+        storage_bytes: { type: integer, format: int64, minimum: 268435456, maximum: 70368744177664 }
+        max_workspaces: { type: integer, minimum: 0, maximum: 1000 }
+        max_containers: { type: integer, minimum: 0, maximum: 1000 }
+        max_databases: { type: integer, minimum: 0, maximum: 1000 }
+        max_terminal_sessions: { type: integer, minimum: 0, maximum: 1000 }
+        gpu_allowed: { type: boolean }
+        max_workspace_duration_min: { type: integer, minimum: 0, maximum: 525600, description: 0 = no limit. }
+        idle_timeout_min: { type: integer, minimum: 0, maximum: 525600, description: 0 = no limit. }
+    Usage:
+      type: object
+      description: Aggregate usage. Running CPU/memory count running containers (plus running native workspaces); allocated storage sums workspace storage allocations.
+      properties:
+        workspaces: { type: integer }
+        containers: { type: integer }
+        databases: { type: integer }
+        terminal_sessions: { type: integer }
+        running_cpu_millis: { type: integer }
+        running_memory_bytes: { type: integer, format: int64 }
+        allocated_storage_bytes: { type: integer, format: int64 }
+        used_storage_bytes: { type: integer, format: int64 }
+        active_gpu_allocations: { type: integer }
+    QuotaUsageEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [quota, usage]
+          properties:
+            quota: { $ref: '#/components/schemas/Quota' }
+            usage: { $ref: '#/components/schemas/Usage' }
+    DashboardSummary:
+      type: object
+      properties:
+        quota: { $ref: '#/components/schemas/Quota' }
+        usage: { $ref: '#/components/schemas/Usage' }
+        workspaces_by_status:
+          type: object
+          additionalProperties: { type: integer }
+        recent_activity:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityItem' }
+        gpu:
+          type: object
+          properties:
+            pending_requests: { type: integer }
+            active_allocations: { type: integer }
+        projects: { type: integer }
+        platform:
+          type: object
+          description: Only with monitoring.view_host.
+          properties:
+            active_users: { type: integer }
+            running_workspaces: { type: integer }
+            running_containers: { type: integer }
+            pending_gpu_requests: { type: integer }
+            firing_alerts: { type: integer }
+
+    # ----- projects -----
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_id: { type: string, format: uuid }
+        owner_username: { type: string }
+        quota_id: { type: [string, 'null'], format: uuid }
+        quota_key: { type: [string, 'null'] }
+        status: { type: string, enum: [active, archived] }
+        member_count: { type: integer }
+        workspace_count: { type: integer }
+        database_count: { type: integer }
+        my_role: { type: [string, 'null'], enum: [owner, maintainer, member, viewer, null] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProjectInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 120 }
+        slug: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$', description: Create only; derived from name when omitted. }
+        description: { type: string, maxLength: 2000 }
+        quota_key: { type: string, description: Requires quotas.manage. }
+        status: { type: string, enum: [active, archived], description: Update only (owner). }
+    ProjectMember:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        full_name: { type: string }
+        role: { type: string, enum: [owner, maintainer, member, viewer] }
+        created_at: { type: string, format: date-time }
+    ProjectDetailEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [project, members, usage, can_manage, is_owner]
+          properties:
+            project: { $ref: '#/components/schemas/Project' }
+            members:
+              type: array
+              items: { $ref: '#/components/schemas/ProjectMember' }
+            usage: { $ref: '#/components/schemas/Usage' }
+            quota:
+              oneOf:
+                - $ref: '#/components/schemas/Quota'
+                - type: 'null'
+            can_manage: { type: boolean }
+            is_owner: { type: boolean }
+    ActivityItem:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        occurred_at: { type: string, format: date-time }
+        actor_username: { type: [string, 'null'] }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        outcome: { type: string, enum: [success, failure, denied] }
+
+    # ----- templates & images -----
+    TemplatePort:
+      type: object
+      required: [port, name]
+      properties:
+        port: { type: integer, minimum: 1024, maximum: 65535 }
+        name: { type: string, maxLength: 40 }
+        proxy: { type: boolean, description: The app understands the proxy base path (ITK_PROXY_BASE); otherwise the prefix is stripped. }
+        host_port: { type: integer, description: Loopback host port assigned at container start (containers only). }
+    Template:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        image_id: { type: string, format: uuid }
+        image_reference: { type: string }
+        image_allowed: { type: boolean }
+        image_present: { type: boolean, description: The image was found/pulled on the host at least once. }
+        runtime_versions:
+          type: object
+          additionalProperties: { type: string }
+        min_cpu_millis: { type: integer }
+        min_memory_bytes: { type: integer, format: int64 }
+        rec_cpu_millis: { type: integer }
+        rec_memory_bytes: { type: integer, format: int64 }
+        default_storage_bytes: { type: integer, format: int64 }
+        ports:
+          type: array
+          items: { $ref: '#/components/schemas/TemplatePort' }
+        gpu_mode: { type: string, enum: [none, optional, required] }
+        security:
+          type: object
+          properties:
+            run_as_uid: { type: integer }
+            run_as_gid: { type: integer }
+            no_new_privileges: { type: boolean }
+            read_only_rootfs: { type: boolean }
+            cap_add:
+              type: array
+              items: { type: string }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        command:
+          type: array
+          items: { type: string }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TemplateEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Template' }
+    TemplateInput:
+      type: object
+      additionalProperties: false
+      properties:
+        key: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$', description: Create only. }
+        name: { type: string, maxLength: 80 }
+        description: { type: string }
+        category: { type: string, default: general }
+        image_id: { type: string, format: uuid }
+        runtime_versions:
+          type: object
+          additionalProperties: { type: string }
+        min_cpu_millis: { type: integer, minimum: 100, maximum: 64000 }
+        min_memory_bytes: { type: integer, format: int64, minimum: 67108864 }
+        rec_cpu_millis: { type: integer }
+        rec_memory_bytes: { type: integer, format: int64 }
+        default_storage_bytes: { type: integer, format: int64, minimum: 268435456 }
+        ports:
+          type: array
+          maxItems: 16
+          items: { $ref: '#/components/schemas/TemplatePort' }
+        gpu_mode: { type: string, enum: [none, optional, required] }
+        env:
+          type: object
+          propertyNames: { pattern: '^[A-Z_][A-Z0-9_]{0,63}$' }
+          additionalProperties: { type: string, maxLength: 4096 }
+        command:
+          type: array
+          maxItems: 64
+          items: { type: string }
+        read_only_rootfs: { type: boolean }
+        is_active: { type: boolean }
+    Image:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        reference: { type: string, examples: ['itk-cloud/ubuntu-dev:1.0'] }
+        description: { type: string }
+        gpu_capable: { type: boolean }
+        is_allowed: { type: boolean }
+        pulled_at: { type: [string, 'null'], format: date-time }
+        size_bytes: { type: [integer, 'null'], format: int64 }
+        template_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ImageEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Image' }
+    ImageInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 80 }
+        reference: { type: string, pattern: '^[a-z0-9][a-z0-9._/:@-]{1,250}$', description: Create only. }
+        description: { type: string }
+        gpu_capable: { type: boolean }
+        is_allowed: { type: boolean, default: true }
+
+    # ----- workspaces -----
+    WorkspaceStatus:
+      type: string
+      enum: [requested, provisioning, ready, running, stopped, suspended, failed, deleting, deleted]
+    Workspace:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        owner_id: { type: string, format: uuid }
+        owner_username: { type: string }
+        project_id: { type: [string, 'null'], format: uuid }
+        project_name: { type: [string, 'null'] }
+        template_id: { type: string, format: uuid }
+        template_key: { type: string }
+        template_name: { type: string }
+        type: { type: string, enum: [container, native] }
+        status: { $ref: '#/components/schemas/WorkspaceStatus' }
+        status_reason: { type: [string, 'null'] }
+        cpu_millis: { type: integer }
+        memory_bytes: { type: integer, format: int64 }
+        storage_bytes: { type: integer, format: int64 }
+        pids_limit: { type: integer }
+        idle_timeout_min: { type: [integer, 'null'] }
+        max_duration_min: { type: [integer, 'null'] }
+        storage_used_bytes: { type: [integer, 'null'], format: int64 }
+        last_activity_at: { type: [string, 'null'], format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        access:
+          type: string
+          enum: [owner, editor, operator, viewer, none]
+          description: Caller's effective access (omitted when not computed).
+        pending_job:
+          type: [string, 'null']
+          description: Kind of the queued/running lifecycle job (e.g. `workspace.provision`), null when idle.
+    WorkspaceEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Workspace' }
+    WorkspaceCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        template_id: { type: string, format: uuid, description: template_id or template_key is required. }
+        template_key: { type: string }
+        project_id: { type: string, format: uuid, description: The owner must be a project member other than viewer. }
+        type: { type: string, enum: [container, native], description: Defaults to WORKSPACE_DEFAULT_DRIVER (docker → container). }
+        cpu_millis: { type: integer, description: Defaults to the template recommendation; must be within template minimum and quota. }
+        memory_bytes: { type: integer, format: int64 }
+        storage_bytes: { type: integer, format: int64, minimum: 268435456, description: Defaults to the template default. }
+        idle_timeout_min: { type: integer, minimum: 5, maximum: 10080, description: Defaults to the quota idle timeout. }
+        owner_id: { type: string, format: uuid, description: Create on behalf of another user (workspaces.manage_all). }
+    Grants:
+      type: object
+      description: Effective workspace grants (field names are capitalised in the JSON output).
+      properties:
+        View: { type: boolean }
+        Operate: { type: boolean }
+        Edit: { type: boolean }
+        Manage: { type: boolean }
+        Emergency: { type: boolean, description: Edit is granted only through workspaces.access_all. }
+    WorkspaceMember:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        full_name: { type: string }
+        role: { type: string, enum: [viewer, editor] }
+    WorkspaceDetail:
+      allOf:
+        - $ref: '#/components/schemas/Workspace'
+        - type: object
+          required: [containers, template, members, grants]
+          properties:
+            containers:
+              type: array
+              items: { $ref: '#/components/schemas/Container' }
+            template: { $ref: '#/components/schemas/Template' }
+            members:
+              type: array
+              items: { $ref: '#/components/schemas/WorkspaceMember' }
+            grants: { $ref: '#/components/schemas/Grants' }
+    WorkspaceJob:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, examples: [workspace.start] }
+        status: { type: string, enum: [queued, running, succeeded, failed, dead, cancelled] }
+        attempts: { type: integer }
+        last_error: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+
+    # ----- files & terminals -----
+    FileEntry:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string, description: Workspace-relative path. }
+        type: { type: string, enum: [file, dir, symlink, other] }
+        size: { type: integer, format: int64 }
+        mode: { type: string, examples: [-rw-r--r--] }
+        mod_time: { type: string, format: date-time }
+    FileContent:
+      type: object
+      properties:
+        path: { type: string }
+        content: { type: string }
+        size: { type: integer, format: int64 }
+        mod_time: { type: string, format: date-time, description: RFC 3339 with nanoseconds; pass back as expected_mod_time. }
+    TerminalSession:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        workspace_name: { type: string }
+        container_id: { type: [string, 'null'], format: uuid }
+        container_name: { type: [string, 'null'] }
+        status: { type: string, enum: [pending, active, closed, expired] }
+        created_at: { type: string, format: date-time }
+        connected_at: { type: [string, 'null'], format: date-time }
+        last_activity_at: { type: [string, 'null'], format: date-time }
+        expires_at: { type: string, format: date-time }
+        ended_at: { type: [string, 'null'], format: date-time }
+        end_reason: { type: [string, 'null'] }
+        websocket_path: { type: string, examples: [/api/v1/terminals/0b9c.../ws] }
+
+    # ----- containers -----
+    ContainerStatus:
+      type: string
+      enum: [created, starting, running, stopping, stopped, failed, removing, removed]
+    Container:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        workspace_name: { type: string }
+        owner_id: { type: string, format: uuid }
+        owner_username: { type: string }
+        template_id: { type: string, format: uuid }
+        template_name: { type: string }
+        image_id: { type: string, format: uuid }
+        image: { type: string }
+        name: { type: string }
+        is_primary: { type: boolean }
+        runtime_id: { type: [string, 'null'], description: Docker container ID. }
+        status: { $ref: '#/components/schemas/ContainerStatus' }
+        status_reason: { type: [string, 'null'] }
+        cpu_millis: { type: integer }
+        memory_bytes: { type: integer, format: int64 }
+        pids_limit: { type: integer }
+        ports:
+          type: array
+          items: { $ref: '#/components/schemas/TemplatePort' }
+        gpu_device_ids:
+          type: array
+          items: { type: string }
+        started_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        pending_job: { type: [string, 'null'] }
+    ContainerEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/Container' }
+    ContainerState:
+      type: object
+      properties:
+        runtime_id: { type: string }
+        status: { type: string, enum: [created, running, paused, restarting, removing, exited, dead, missing, removed] }
+        exit_code: { type: integer }
+        error: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        oom_killed: { type: boolean }
+        host_ports:
+          type: object
+          additionalProperties: { type: integer }
+    ContainerStats:
+      type: object
+      properties:
+        runtime_id: { type: string }
+        cpu_percent: { type: number, description: Percent of one core (150 = 1.5 cores). }
+        memory_bytes: { type: integer, format: int64 }
+        memory_limit: { type: integer, format: int64 }
+        pids: { type: integer, format: int64 }
+        net_rx_bytes: { type: integer, format: int64 }
+        net_tx_bytes: { type: integer, format: int64 }
+    ContainerDetail:
+      allOf:
+        - $ref: '#/components/schemas/Container'
+        - type: object
+          properties:
+            runtime:
+              oneOf:
+                - $ref: '#/components/schemas/ContainerState'
+                - type: 'null'
+            runtime_error: { type: string }
+            stats:
+              oneOf:
+                - $ref: '#/components/schemas/ContainerStats'
+                - type: 'null'
+    LogsResult:
+      type: object
+      properties:
+        lines:
+          type: array
+          items: { type: string }
+        truncated: { type: boolean }
+
+    # ----- databases -----
+    Database:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        project_name: { type: string }
+        created_by: { type: string, format: uuid }
+        created_by_username: { type: string }
+        display_name: { type: string }
+        db_name: { type: string, pattern: '^itk_[a-z0-9_]{3,55}$' }
+        role_name: { type: string, description: Equal to db_name. }
+        engine: { type: string, enum: [postgresql] }
+        status: { type: string, enum: [provisioning, ready, failed, deleting, deleted] }
+        status_reason: { type: [string, 'null'] }
+        size_bytes: { type: [integer, 'null'], format: int64 }
+        connection_limit: { type: integer }
+        last_backup_at: { type: [string, 'null'], format: date-time }
+        last_backup_status: { type: [string, 'null'] }
+        host: { type: string, description: PROJECT_DB_HOST }
+        port: { type: integer, description: PROJECT_DB_PORT }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DatabaseCredentials:
+      type: object
+      description: Returned only on creation and credential reset.
+      properties:
+        host: { type: string }
+        port: { type: integer }
+        database: { type: string }
+        username: { type: string }
+        password: { type: string }
+        connection_string: { type: string, examples: ['postgresql://itk_x:pw@10.0.0.1:5432/itk_x?sslmode=prefer'] }
+
+    # ----- GPU -----
+    GPUDevice:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        uuid: { type: string, examples: [GPU-00000000-1111-2222-3333-444444444444] }
+        index: { type: integer }
+        name: { type: string }
+        driver_version: { type: [string, 'null'] }
+        cuda_version: { type: [string, 'null'] }
+        memory_total_bytes: { type: [integer, 'null'], format: int64 }
+        memory_used_bytes: { type: [integer, 'null'], format: int64 }
+        utilization_pct: { type: [integer, 'null'] }
+        temperature_c: { type: [integer, 'null'] }
+        mig_mode: { type: [string, 'null'] }
+        allocation_policy: { type: string, enum: [exclusive, shared, disabled] }
+        max_shared: { type: integer }
+        status: { type: string, enum: [available, missing, disabled] }
+        active_allocations: { type: integer }
+        last_seen_at: { type: string, format: date-time }
+    GPUProcess:
+      type: object
+      properties:
+        pid: { type: integer }
+        name: { type: string }
+        memory_bytes: { type: integer, format: int64 }
+        container_id: { type: string }
+    GPUDevicesResponse:
+      type: object
+      required: [devices, gpu_enabled, nvidia_driver, nvidia_container_runtime]
+      properties:
+        devices:
+          type: array
+          items: { $ref: '#/components/schemas/GPUDevice' }
+        gpu_enabled: { type: boolean }
+        nvidia_driver: { type: boolean }
+        nvidia_container_runtime: { type: boolean }
+        processes:
+          type: object
+          description: GPU UUID → processes (approvers/managers/monitoring only).
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/GPUProcess' }
+        inventory_error: { type: string }
+    GPURequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        requester_id: { type: string, format: uuid }
+        requester_username: { type: string }
+        workspace_id: { type: string, format: uuid }
+        workspace_name: { type: string }
+        gpu_device_id: { type: [string, 'null'], format: uuid }
+        gpu_name: { type: [string, 'null'] }
+        mode: { type: string, enum: [exclusive, shared] }
+        duration_hours: { type: integer }
+        reason: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, cancelled] }
+        reviewed_by_username: { type: [string, 'null'] }
+        review_note: { type: [string, 'null'] }
+        reviewed_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+    GPURequestEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/GPURequest' }
+    GPUReviewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        gpu_device_id: { type: string, format: uuid, description: Approve only. }
+        note: { type: string, description: Required (≥ 3 characters) for reject. }
+        duration_hours: { type: integer, minimum: 1, description: Approve only; may only shorten. }
+    GPUAllocation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        gpu_device_id: { type: string, format: uuid }
+        gpu_name: { type: string }
+        gpu_index: { type: integer }
+        workspace_id: { type: string, format: uuid }
+        workspace_name: { type: string }
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        mode: { type: string, enum: [exclusive, shared] }
+        status: { type: string, enum: [active, released, expired] }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        released_at: { type: [string, 'null'], format: date-time }
+        release_reason: { type: [string, 'null'] }
+    GPUInventory:
+      type: object
+      properties:
+        available: { type: boolean }
+        error: { type: string }
+        gpus:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              uuid: { type: string }
+              name: { type: string }
+              driver_version: { type: string }
+              cuda_version: { type: string }
+              memory_total_bytes: { type: [integer, 'null'], format: int64 }
+              memory_used_bytes: { type: [integer, 'null'], format: int64 }
+              utilization_pct: { type: [integer, 'null'] }
+              temperature_c: { type: [integer, 'null'] }
+              power_draw_w: { type: [number, 'null'] }
+              mig_mode: { type: string }
+              processes:
+                type: [array, 'null']
+                items: { $ref: '#/components/schemas/GPUProcess' }
+
+    # ----- monitoring -----
+    HostMetrics:
+      type: object
+      properties:
+        collected_at: { type: string, format: date-time }
+        cpu_percent: { type: number }
+        per_core:
+          type: [array, 'null']
+          items: { type: number }
+        load1: { type: number }
+        load5: { type: number }
+        load15: { type: number }
+        memory_total: { type: integer, format: int64 }
+        memory_used: { type: integer, format: int64 }
+        memory_available: { type: integer, format: int64 }
+        swap_total: { type: integer, format: int64 }
+        swap_used: { type: integer, format: int64 }
+        disks:
+          type: [array, 'null']
+          items:
+            type: object
+            properties:
+              mountpoint: { type: string }
+              fstype: { type: string }
+              total: { type: integer, format: int64 }
+              used: { type: integer, format: int64 }
+              free: { type: integer, format: int64 }
+        net_rx_bytes_per_sec: { type: number }
+        net_tx_bytes_per_sec: { type: number }
+        uptime_seconds: { type: integer, format: int64 }
+        docker:
+          type: object
+          properties:
+            available: { type: boolean }
+            version: { type: string }
+            error: { type: string }
+            containers_running: { type: integer }
+            containers_stopped: { type: integer }
+            containers_paused: { type: integer }
+            images: { type: integer }
+    HostMonitoring:
+      type: object
+      required: [available, live]
+      properties:
+        available: { type: boolean }
+        live: { type: boolean }
+        metrics: { $ref: '#/components/schemas/HostMetrics' }
+        error: { type: string }
+        last_sample:
+          type: object
+          properties:
+            cpu_percent: { type: [number, 'null'] }
+            load1: { type: [number, 'null'] }
+            memory_used: { type: [integer, 'null'] }
+            memory_total: { type: [integer, 'null'] }
+            disk_used: { type: [integer, 'null'] }
+            disk_total: { type: [integer, 'null'] }
+            net_rx_bytes_per_sec: { type: [number, 'null'] }
+            net_tx_bytes_per_sec: { type: [number, 'null'] }
+            collected_at: { type: string, format: date-time }
+        node:
+          oneOf:
+            - $ref: '#/components/schemas/AgentNode'
+            - type: 'null'
+    WorkspaceMetrics:
+      type: object
+      properties:
+        workspace_id: { type: string, format: uuid }
+        storage_bytes: { type: integer, format: int64 }
+        storage_used_bytes: { type: [integer, 'null'], format: int64 }
+        cpu_limit_millis: { type: integer }
+        memory_limit_bytes: { type: integer, format: int64 }
+        error: { type: string }
+        containers:
+          type: array
+          items:
+            type: object
+            properties:
+              container_id: { type: string, format: uuid }
+              name: { type: string }
+              cpu_percent: { type: number }
+              memory_bytes: { type: integer, format: int64 }
+              memory_limit: { type: integer, format: int64 }
+              pids: { type: integer }
+              net_rx_bytes: { type: integer, format: int64 }
+              net_tx_bytes: { type: integer, format: int64 }
+    MetricsHistory:
+      type: object
+      properties:
+        scope: { type: string }
+        ref: { type: string }
+        bucket_seconds: { type: integer }
+        points:
+          type: array
+          items:
+            type: object
+            properties:
+              t: { type: string, format: date-time }
+              cpu_pct: { type: [number, 'null'] }
+              memory_bytes: { type: [number, 'null'] }
+              memory_total_bytes: { type: [number, 'null'] }
+              disk_used_bytes: { type: [number, 'null'] }
+              net_rx_bytes_per_sec: { type: [number, 'null'] }
+              net_tx_bytes_per_sec: { type: [number, 'null'] }
+              load1: { type: [number, 'null'] }
+              gpu_util_pct: { type: [number, 'null'] }
+              gpu_memory_bytes: { type: [number, 'null'] }
+              gpu_temperature_c: { type: [number, 'null'] }
+    Alert:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        rule:
+          type: string
+          enum: [agent_offline, disk_full, memory_critical, cpu_sustained_high, docker_unavailable, gpu_temperature, gpu_overutilized, queue_backlog, jobs_failed, backup_failed, backup_missing, service_down]
+        subject: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        status: { type: string, enum: [firing, resolved] }
+        message: { type: string }
+        value: { type: [number, 'null'] }
+        started_at: { type: string, format: date-time }
+        resolved_at: { type: [string, 'null'], format: date-time }
+        acknowledged_by_username: { type: [string, 'null'] }
+        acknowledged_at: { type: [string, 'null'], format: date-time }
+    ServicesStatus:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string, enum: [api, postgresql, redis, worker, agent, web] }
+              status: { type: string, enum: [up, down, degraded, unknown, not_configured] }
+              detail: { type: string }
+              latency_ms: { type: integer }
+        queue: { $ref: '#/components/schemas/QueueStats' }
+        last_backup:
+          type: object
+          properties:
+            status: { type: [string, 'null'] }
+            finished_at: { type: [string, 'null'], format: date-time }
+            kind: { type: [string, 'null'] }
+        containers_by_status:
+          type: object
+          additionalProperties: { type: integer }
+        prometheus_url: { type: string }
+        grafana_url: { type: string }
+    QueueStats:
+      type: object
+      properties:
+        queued: { type: integer, description: Due queued jobs. }
+        running: { type: integer }
+        failed_24h: { type: integer, description: Jobs that went dead in the last 24 h. }
+        dead: { type: integer }
+        oldest_queued_seconds: { type: integer }
+    JobRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        status: { type: string, enum: [queued, running, dead] }
+        attempts: { type: integer }
+        max_attempts: { type: integer }
+        last_error: { type: [string, 'null'] }
+        resource_type: { type: [string, 'null'] }
+        resource_id: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    # ----- notifications -----
+    NotificationType:
+      type: string
+      enum: [system, workspace, gpu, quota, maintenance, security, backup, alert]
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/NotificationType' }
+        severity: { type: string, enum: [info, success, warning, critical] }
+        title: { type: string }
+        body: { type: string }
+        link: { type: [string, 'null'], description: 'Console-relative link, e.g. /workspaces/{id}.' }
+        read_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+    Announcement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: [string, 'null'], format: date-time }
+        created_by_username: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+
+    # ----- admin -----
+    AuditLog:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        occurred_at: { type: string, format: date-time }
+        actor_id: { type: [string, 'null'], format: uuid }
+        actor_username: { type: [string, 'null'] }
+        action: { type: string, examples: [workspace.emergency_access] }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        outcome: { type: string, enum: [success, failure, denied] }
+        reason: { type: [string, 'null'] }
+        ip: { type: [string, 'null'] }
+        user_agent: { type: [string, 'null'] }
+        request_id: { type: [string, 'null'] }
+        metadata:
+          type: object
+          additionalProperties: true
+    Capabilities:
+      type: object
+      properties:
+        docker: { type: boolean }
+        docker_version: { type: string }
+        docker_error: { type: string }
+        nvidia: { type: boolean }
+        nvidia_runtime: { type: boolean }
+        native_workspaces: { type: boolean }
+        storage_driver: { type: string, enum: [loopback, directory] }
+        storage_enforced: { type: boolean }
+        apparmor: { type: boolean }
+        seccomp: { type: boolean }
+    AgentNode:
+      type: object
+      properties:
+        name: { type: string, examples: [local] }
+        hostname: { type: [string, 'null'] }
+        agent_version: { type: [string, 'null'] }
+        protocol_version: { type: [integer, 'null'] }
+        os: { type: [string, 'null'] }
+        kernel: { type: [string, 'null'] }
+        arch: { type: [string, 'null'] }
+        capabilities: { $ref: '#/components/schemas/Capabilities' }
+        host_info:
+          type: object
+          properties:
+            cpu_model: { type: string }
+            cpu_cores: { type: integer }
+            cpu_threads: { type: integer }
+            memory_total: { type: integer, format: int64 }
+            boot_time: { type: string, format: date-time }
+        status: { type: string, enum: [online, offline, degraded, unknown], description: offline when not seen for 2 minutes. }
+        last_error: { type: [string, 'null'] }
+        last_seen_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: string, format: date-time }
+        expected_protocol_version: { type: integer }
+    AgentStatus:
+      type: object
+      description: Either `node` (+ `live_error` when the live check failed) or, if the agent never reported, `status`/`error`/`expected_protocol_version`.
+      properties:
+        node: { $ref: '#/components/schemas/AgentNode' }
+        live_error: { type: string }
+        status: { type: string, enum: [unknown] }
+        error: { type: string }
+        expected_protocol_version: { type: integer }
+    Setting:
+      type: object
+      required: [key, type, default, description, category, value]
+      properties:
+        key: { type: string, examples: [alerts.disk_pct] }
+        type: { type: string, enum: [bool, int, string, enum] }
+        default: { type: [string, integer, boolean] }
+        min: { type: integer }
+        max: { type: integer }
+        options:
+          type: array
+          items: { type: string }
+        description: { type: string }
+        category: { type: string }
+        value: { type: [string, integer, boolean] }
+    SettingsEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Setting' }
+    BackupJob:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [platform_db, config, workspace_metadata, workspace_files, project_databases, full] }
+        status: { type: string, enum: [queued, running, succeeded, failed, expired] }
+        trigger: { type: string, enum: [manual, scheduled, pre_upgrade] }
+        file_name: { type: [string, 'null'] }
+        size_bytes: { type: [integer, 'null'], format: int64 }
+        checksum_sha256: { type: [string, 'null'] }
+        encrypted: { type: boolean }
+        error: { type: [string, 'null'] }
+        triggered_by_username: { type: [string, 'null'] }
+        started_at: { type: [string, 'null'], format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+        expires_at: { type: [string, 'null'], format: date-time }
+        restore_status: { type: [string, 'null'], enum: [queued, running, succeeded, failed, null] }
+        restored_at: { type: [string, 'null'], format: date-time }
+        restore_error: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+    BackupConfig:
+      type: object
+      properties:
+        encryption_configured: { type: boolean }
+        offsite_copy_configured: { type: boolean }
+        retention_days: { type: integer }
+        schedule_enabled: { type: boolean }
+        schedule_hour_utc: { type: integer }
+        project_databases: { type: boolean }

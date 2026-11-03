@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="id">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<title>ITK Cloud</title>
+		<script nonce="%sveltekit.nonce%">
+			// Apply the saved theme before first paint to avoid a flash.
+			(function () {
+				try {
+					var t = localStorage.getItem('itk-theme') || 'system';
+					var dark =
+						t === 'dark' ||
+						(t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+					document.documentElement.classList.toggle('dark', dark);
+				} catch (e) {}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover" class="bg-surface text-fg antialiased">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

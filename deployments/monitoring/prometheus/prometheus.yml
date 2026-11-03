@@ -1,0 +1,23 @@
+# Prometheus configuration for an ITK Cloud host (optional component).
+# Installed by installer/install.sh --with-monitoring. Prometheus listens on
+# 127.0.0.1:9090 only; Grafana reads it locally.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/itk-cloud-rules.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+  - job_name: node
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+        labels:
+          instance: itk-cloud-host
+  # Uncomment when the NVIDIA DCGM exporter is installed (GPU servers).
+  # - job_name: dcgm
+  #   static_configs:
+  #     - targets: ['127.0.0.1:9400']

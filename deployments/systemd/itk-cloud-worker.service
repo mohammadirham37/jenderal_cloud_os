@@ -1,0 +1,49 @@
+[Unit]
+Description=ITK Cloud background worker (jobs, metrics, alerts, backups)
+Documentation=file:///opt/itk-cloud/docs/operations.md
+After=network-online.target postgresql.service redis-server.service itk-cloud-agent.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=itk-cloud
+Group=itk-cloud
+WorkingDirectory=/var/lib/itk-cloud
+EnvironmentFile=/etc/itk-cloud/itk-cloud.env
+Environment=ITK_CLOUD_ENV_FILE=/etc/itk-cloud/itk-cloud.env
+ExecStart=/opt/itk-cloud/current/bin/itk-cloud-worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+LimitNOFILE=65536
+UMask=0077
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+# Backups are written here (and to BACKUP_COPY_DIR if configured; add it with
+# a drop-in: systemctl edit itk-cloud-worker -> ReadWritePaths=/mnt/backup-nas).
+ReadWritePaths=/srv/itk-cloud/backups
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

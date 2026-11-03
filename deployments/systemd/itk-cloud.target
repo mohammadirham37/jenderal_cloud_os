@@ -1,0 +1,6 @@
+[Unit]
+Description=ITK Cloud (all services)
+Wants=itk-cloud-agent.service itk-cloud-api.service itk-cloud-worker.service itk-cloud-web.service
+
+[Install]
+WantedBy=multi-user.target

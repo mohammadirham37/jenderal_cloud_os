@@ -1,0 +1,176 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+
+/* Self-hosted fonts (the platform is LAN-only and the CSP allows only 'self'). */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/chakra-petch/500.css';
+@import '@fontsource/chakra-petch/600.css';
+@import '@fontsource/chakra-petch/700.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens: neutral developer-console palette with a teal accent.
+   All text/background pairs meet WCAG AA contrast in both themes. */
+@theme {
+	--font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--font-display: 'Chakra Petch', 'IBM Plex Sans', ui-sans-serif, sans-serif;
+
+	/* Desktop shell: signal orange (lab indicator lamp) on ink. */
+	--color-signal: #ff7a1a;
+	--color-signal-soft: rgba(255, 122, 26, 0.16);
+	--color-ink: #0b1118;
+	--color-glass: rgba(14, 20, 28, 0.72);
+	--color-glass-strong: rgba(14, 20, 28, 0.9);
+
+	--animate-window-in: window-in 220ms cubic-bezier(0.2, 0.9, 0.25, 1.05) both;
+	--animate-rise: rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	--animate-pop: pop 160ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+
+	@keyframes window-in {
+		from {
+			opacity: 0;
+			transform: translateY(14px) scale(0.965);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes rise {
+		from {
+			opacity: 0;
+			transform: translateY(18px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes pop {
+		from {
+			opacity: 0;
+			transform: translateY(10px) scale(0.98);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+
+	--color-surface: #f6f7f9;
+	--color-panel: #ffffff;
+	--color-panel-2: #f1f3f6;
+	--color-border: #e2e5ea;
+	--color-border-strong: #cdd2da;
+	--color-fg: #151a22;
+	--color-fg-muted: #5b6573;
+	--color-fg-subtle: #7b8593;
+
+	--color-accent: #0f766e;
+	--color-accent-hover: #115e59;
+	--color-accent-soft: #e6f4f2;
+	--color-accent-fg: #ffffff;
+
+	--color-danger: #c62828;
+	--color-danger-soft: #fdecec;
+	--color-warning: #a15c00;
+	--color-warning-soft: #fff4e0;
+	--color-success: #1b7a3a;
+	--color-success-soft: #e7f6ec;
+	--color-info: #1d5fbf;
+	--color-info-soft: #e8f0fc;
+
+	--color-sidebar: #10151d;
+	--color-sidebar-fg: #c3cad5;
+	--color-sidebar-active: #1d2632;
+}
+
+@layer base {
+	.dark {
+		--color-surface: #0d1117;
+		--color-panel: #141a22;
+		--color-panel-2: #1a212b;
+		--color-border: #262f3b;
+		--color-border-strong: #364151;
+		--color-fg: #e6eaf0;
+		--color-fg-muted: #a3adbb;
+		--color-fg-subtle: #8591a1;
+		--color-accent: #2dd4bf;
+		--color-accent-hover: #5eead4;
+		--color-accent-soft: #0f2e2b;
+		--color-accent-fg: #062320;
+		--color-danger: #f87171;
+		--color-danger-soft: #3a1717;
+		--color-warning: #fbbf24;
+		--color-warning-soft: #3a2a0c;
+		--color-success: #4ade80;
+		--color-success-soft: #12301c;
+		--color-info: #60a5fa;
+		--color-info-soft: #132741;
+		--color-sidebar: #0a0e14;
+		--color-sidebar-fg: #a9b3c1;
+		--color-sidebar-active: #18202b;
+	}
+
+	html {
+		color-scheme: light;
+	}
+	html.dark {
+		color-scheme: dark;
+	}
+	:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 2px;
+	}
+	input,
+	select,
+	textarea {
+		color: var(--color-fg);
+	}
+}
+
+@layer components {
+	.input {
+		@apply block w-full rounded-md border-border-strong bg-panel text-sm text-fg shadow-sm placeholder:text-fg-subtle focus:border-accent focus:ring-accent disabled:opacity-60;
+	}
+	.label {
+		@apply mb-1 block text-sm font-medium text-fg;
+	}
+	.card {
+		@apply rounded-lg border border-border bg-panel shadow-sm;
+	}
+	.link {
+		@apply font-medium text-accent hover:text-accent-hover hover:underline;
+	}
+	.font-display {
+		font-family: var(--font-display);
+		letter-spacing: 0.01em;
+	}
+	/* Frosted panels of the desktop shell (always dark). */
+	.glass {
+		background: var(--color-glass);
+		backdrop-filter: blur(22px) saturate(1.4);
+		-webkit-backdrop-filter: blur(22px) saturate(1.4);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.06),
+			0 24px 60px -18px rgba(0, 0, 0, 0.65);
+	}
+	.kbd {
+		@apply rounded border border-border bg-panel-2 px-1.5 py-0.5 font-mono text-xs;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 1ms !important;
+		transition-duration: 1ms !important;
+	}
+}

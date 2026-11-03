@@ -1,0 +1,10 @@
+{
+  "default-address-pools": [
+    { "base": "10.213.0.0/16", "size": 24 }
+  ],
+  "no-new-privileges": true,
+  "live-restore": true,
+  "log-driver": "json-file",
+  "log-opts": { "max-size": "10m", "max-file": "3" },
+  "userland-proxy": false
+}

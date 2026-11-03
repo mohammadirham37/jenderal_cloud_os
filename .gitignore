@@ -1,0 +1,27 @@
+# Build output
+/bin/
+/dist/
+*.test
+coverage.out
+
+# Local configuration and runtime data (never commit secrets)
+.env
+.env.*
+!.env.example
+/.dev/
+*.age
+*-private-key.txt
+
+# Web
+apps/web/node_modules/
+apps/web/.svelte-kit/
+apps/web/build/
+apps/web/test-results/
+apps/web/playwright-report/
+node_modules/
+
+# Editors / OS
+.DS_Store
+.idea/
+*.swp
+tests/e2e/node_modules

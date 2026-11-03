@@ -1,0 +1,11 @@
+#!/bin/sh
+# Seed default dotfiles into a fresh workspace home, then run the command.
+set -e
+if [ -d /etc/skel ] && [ -w "$HOME" ]; then
+  for f in .bashrc .profile; do
+    if [ -f "/etc/skel/$f" ] && [ ! -e "$HOME/$f" ]; then
+      cp "/etc/skel/$f" "$HOME/$f" 2>/dev/null || true
+    fi
+  done
+fi
+exec "$@"

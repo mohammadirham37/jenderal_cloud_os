@@ -1,0 +1,49 @@
+[Unit]
+Description=ITK Cloud API
+Documentation=file:///opt/itk-cloud/docs/operations.md
+After=network-online.target postgresql.service redis-server.service itk-cloud-agent.service
+Wants=network-online.target
+Requires=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=itk-cloud
+Group=itk-cloud
+WorkingDirectory=/var/lib/itk-cloud
+EnvironmentFile=/etc/itk-cloud/itk-cloud.env
+Environment=ITK_CLOUD_ENV_FILE=/etc/itk-cloud/itk-cloud.env
+ExecStart=/opt/itk-cloud/current/bin/itk-cloud-api
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+LimitNOFILE=65536
+UMask=0077
+
+# Hardening: the API needs only network access, the agent socket and its config.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

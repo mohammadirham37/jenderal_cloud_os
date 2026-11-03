@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (lint, unit, integration)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+      TEST_PG_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+      TEST_REDIS_URL: redis://127.0.0.1:6379/14
+      TEST_DOCKER_SOCKET: /var/run/docker.sock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install PostgreSQL client tools (pg_dump for backup tests)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: gofmt
+        run: test -z "$(gofmt -l apps internal packages migrations tests)"
+      - name: go vet
+        run: go vet ./...
+      - name: Unit tests
+        run: go test -race -count=1 ./internal/... ./packages/... ./apps/...
+      - name: Build workspace test image
+        run: installer/build-workspace-images.sh ubuntu-dev
+      - name: Integration tests
+        run: go test -count=1 -v ./tests/integration/...
+      - name: Vulnerability scan (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  web:
+    name: Web (lint, check, unit, build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run check
+      - run: pnpm exec vitest run --project server
+      - run: pnpm run build
+      - name: Dependency audit
+        run: pnpm audit --prod --audit-level high
+
+  scripts:
+    name: Installer scripts & API contract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning -x installer/*.sh
+      - name: OpenAPI lint
+        run: npx --yes @redocly/cli@latest lint packages/api-contracts/openapi.yaml
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
