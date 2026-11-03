@@ -116,8 +116,8 @@ func TestContainerWorkspaceLifecycle(t *testing.T) {
 
 	// Template catalog.
 	tpls := student.Do("GET", "/api/v1/templates", nil).Expect(t, 200, "templates").List()
-	if len(tpls) != 11 {
-		t.Fatalf("expected 11 templates, got %d", len(tpls))
+	if len(tpls) != 12 {
+		t.Fatalf("expected 12 templates (11 development + web browser), got %d", len(tpls))
 	}
 
 	// Create workspace (idempotent with Idempotency-Key).
