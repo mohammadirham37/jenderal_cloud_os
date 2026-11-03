@@ -4,6 +4,9 @@
 	# LAN-only deployment: certificates come from Caddy's internal CA.
 	# Distribute the root certificate to lab clients (see docs/installation.md).
 	auto_https disable_redirects
+	# Clients that send no SNI (e.g. when the console is opened by IP address)
+	# still get the console certificate.
+	default_sni __DOMAIN__
 }
 
 # Main console: web UI + API.
