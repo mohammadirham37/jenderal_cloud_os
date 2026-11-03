@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,13 @@ func randHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// randKey returns a random base64-encoded 32-byte key (ENCRYPTION_KEY).
+func randKey() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // Env is a running test environment.
@@ -159,7 +167,7 @@ func Setup(t *testing.T, opts Opts) *Env {
 	base := "http://" + ln.Addr().String()
 	vars := map[string]string{
 		"APP_ENV": "test", "APP_BASE_URL": base, "APP_LOG_LEVEL": "error", "DATABASE_URL": dbURL, "REDIS_URL": rdbURL,
-		"SESSION_SECRET": randHex(24), "ENCRYPTION_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+		"SESSION_SECRET": randHex(24), "ENCRYPTION_KEY": randKey(),
 		"AGENT_SOCKET_PATH": sock, "AGENT_SHARED_SECRET": secret, "WORKSPACE_ROOT": filepath.Join(tmp, "ws"),
 		"BACKUP_ROOT": filepath.Join(tmp, "backups"), "BACKUP_AGE_RECIPIENT": identity.Recipient().String(),
 		"CONFIG_DIR": repoRoot() + "/deployments/caddy", "GPU_ENABLED": fmt.Sprint(opts.GPU),

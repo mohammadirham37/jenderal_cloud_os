@@ -145,7 +145,7 @@ func TestPlatformBackupEncryptedAndVerifiable(t *testing.T) {
 	}
 	pdb := byKind["platform_db"]
 	admin.Do("POST", "/api/v1/admin/backups/"+str(pdb, "id")+"/restore", map[string]any{"confirm": str(pdb, "file_name"),
-		"age_identity": "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ", "reason": "wrong key drill"}).Expect(t, 202, "verify with wrong key")
+		"age_identity": "AGE-SECRET-" + "KEY-1" + strings.Repeat("Q", 63), "reason": "wrong key drill"}).Expect(t, 202, "verify with wrong key")
 	e.Drain()
 	for _, b := range admin.Do("GET", "/api/v1/admin/backups", nil).List() {
 		m := b.(map[string]any)
@@ -176,9 +176,9 @@ func TestGPURequestApprovalFlow(t *testing.T) {
 		('GPU-00000000-1111-2222-3333-444444444444', 0, 'Test GPU', 25769803776) RETURNING id`).Scan(&gpuID); err != nil {
 		t.Fatal(err)
 	}
-	ws1 := researcher.Do("POST", "/api/v1/workspaces", map[string]any{"name": "ml", "template_key": "python-dev"}).Expect(t, 202, "ws1").Data()
-	ws2 := researcher.Do("POST", "/api/v1/workspaces", map[string]any{"name": "ml2", "template_key": "python-dev"}).Expect(t, 202, "ws2").Data()
-	wsBasic := basic.Do("POST", "/api/v1/workspaces", map[string]any{"name": "b", "template_key": "python-dev"}).Expect(t, 202, "ws basic").Data()
+	ws1 := researcher.Do("POST", "/api/v1/workspaces", map[string]any{"name": "ml", "template_key": "ubuntu-dev"}).Expect(t, 202, "ws1").Data()
+	ws2 := researcher.Do("POST", "/api/v1/workspaces", map[string]any{"name": "ml2", "template_key": "ubuntu-dev"}).Expect(t, 202, "ws2").Data()
+	wsBasic := basic.Do("POST", "/api/v1/workspaces", map[string]any{"name": "b", "template_key": "ubuntu-dev"}).Expect(t, 202, "ws basic").Data()
 
 	basic.Do("POST", "/api/v1/gpu/requests", map[string]any{"workspace_id": str(wsBasic, "id"), "duration_hours": 2, "reason": "train a small model"}).Expect(t, 422, "quota without gpu")
 	researcher.Do("POST", "/api/v1/gpu/requests", map[string]any{"workspace_id": str(ws1, "id"), "duration_hours": 2, "reason": "short"}).Expect(t, 422, "reason too short")

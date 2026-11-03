@@ -29,8 +29,8 @@ func TestMigrateUpIsIdempotent(t *testing.T) {
 		t.Fatalf("status cur=%d latest=%d err=%v", cur, latest, err)
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM workspace_templates`).Scan(&n); err != nil || n != 11 {
-		t.Fatalf("expected 11 templates, got %d (%v)", n, err)
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM workspace_templates`).Scan(&n); err != nil || n != 12 {
+		t.Fatalf("expected 12 templates (11 development + web browser), got %d (%v)", n, err)
 	}
 	// audit log must be append-only
 	if _, err := pool.Exec(ctx, `INSERT INTO audit_logs (action, outcome) VALUES ('test.append', 'success')`); err != nil {
