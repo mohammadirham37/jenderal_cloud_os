@@ -75,7 +75,7 @@
 	{#if !t.image_present}
 		<p class="mt-3 flex items-center gap-1.5 text-xs text-warning">
 			<ImageOff class="size-3.5 shrink-0" aria-hidden="true" />
-			Image not pulled yet — the first start may take longer.
+			Image not installed on this server yet.
 		</p>
 	{/if}
 	{#if note}<p class="mt-2 text-xs text-danger">{note}</p>{/if}

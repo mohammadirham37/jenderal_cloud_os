@@ -81,6 +81,8 @@
 
 	/** Reason a template cannot be used with the current quota, if any. */
 	function unusable(t: Template): string | undefined {
+		if (!t.image_present && !nativeAllowed)
+			return 'Not installed on this server yet — ask an administrator to build this image.';
 		if (!quota || !used) return undefined;
 		if (t.gpu_mode === 'required' && !quota.gpu_allowed)
 			return 'Requires GPU access, which your quota package does not include.';
@@ -541,7 +543,8 @@
 				</dl>
 				{#if !tpl.image_present}
 					<p class="mt-4 text-xs text-warning">
-						The template image has not been pulled yet; provisioning may take a few minutes.
+						The template image is not installed on this server; only a Linux-native workspace can
+						use this template.
 					</p>
 				{/if}
 			</Card>

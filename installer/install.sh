@@ -112,8 +112,10 @@ OS_ID="$(. /etc/os-release && echo "${ID:-}")"
 OS_VERSION_ID="$(. /etc/os-release && echo "${VERSION_ID:-}")"
 OS_PRETTY="$(. /etc/os-release && echo "${PRETTY_NAME:-unknown}")"
 OS_CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
-[ "$OS_ID" = "ubuntu" ] && { [ "$OS_VERSION_ID" = "24.04" ] || [ "$OS_VERSION_ID" = "26.04" ]; } ||
-	die "Ubuntu Server 24.04 LTS or 26.04 LTS is required (found $OS_PRETTY)."
+case "$OS_ID:$OS_VERSION_ID" in
+ubuntu:24.04 | ubuntu:26.04) ;;
+*) die "Ubuntu Server 24.04 LTS or 26.04 LTS is required (found $OS_PRETTY)." ;;
+esac
 ok "OS: $OS_PRETTY"
 
 case "$(uname -m)" in
@@ -306,10 +308,11 @@ ln -sfn "$ITK_PREFIX/current/docs" "$ITK_PREFIX/docs" 2>/dev/null || true
 rm -f /usr/local/bin/itkctl
 cat >/usr/local/bin/itkctl <<'WRAPPER'
 #!/bin/sh
-# itkctl wrapper: loads the Jenderal Cloud OS configuration (root only).
-set -a
-. /etc/itk-cloud/itk-cloud.env
-set +a
+# itkctl wrapper: points itkctl at the Jenderal Cloud OS configuration (root only).
+# The file is parsed by itkctl itself, not sourced: values such as DATABASE_URL
+# contain characters ('&') that a shell would interpret.
+ITK_CLOUD_ENV_FILE=/etc/itk-cloud/itk-cloud.env
+export ITK_CLOUD_ENV_FILE
 exec /opt/itk-cloud/current/bin/itkctl "$@"
 WRAPPER
 chmod 0750 /usr/local/bin/itkctl
@@ -613,8 +616,11 @@ fi
 # ---------------------------------------------------------------------------
 log "Final health check"
 run_itkctl health | sed 's/^/  /' || die "Health check failed."
-curl -fsS --resolve "$DOMAIN:443:127.0.0.1" --cacert "$CA_CERT" "https://$DOMAIN/health/live" >/dev/null 2>&1 &&
-	ok "HTTPS endpoint reachable" || warn "HTTPS check via Caddy failed; verify DNS and 'journalctl -u caddy'."
+if curl -fsS --resolve "$DOMAIN:443:127.0.0.1" --cacert "$CA_CERT" "https://$DOMAIN/health/live" >/dev/null 2>&1; then
+	ok "HTTPS endpoint reachable"
+else
+	warn "HTTPS check via Caddy failed; verify DNS and 'journalctl -u caddy'."
+fi
 echo "$ITK_VERSION" >"$ITK_STATE/installed-version"
 
 cat <<EOF

@@ -12,6 +12,7 @@ import (
 
 	"github.com/itk-cloud/itk-cloud/internal/modules/agent"
 	"github.com/itk-cloud/itk-cloud/internal/modules/audit"
+	"github.com/itk-cloud/itk-cloud/internal/modules/images"
 	"github.com/itk-cloud/itk-cloud/internal/modules/resources"
 	"github.com/itk-cloud/itk-cloud/internal/modules/settings"
 	"github.com/itk-cloud/itk-cloud/internal/platform/authz"
@@ -192,6 +193,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Workspace, error)
 		}
 		if !tpl.IsActive || !tpl.ImageAllowed {
 			return httpx.Validation(map[string]string{"template_id": "template is not available"})
+		}
+		if in.Type == "container" && !tpl.ImagePresent && s.Agent != nil {
+			// Re-check live: the image may have been built since the last sync.
+			// When the agent cannot answer, let the provisioning job decide.
+			if present, err := images.CheckPresent(ctx, s.Pool, s.Agent, tpl.ImageID, tpl.ImageReference); err == nil && !present {
+				return httpx.Validation(map[string]string{"template_id": fmt.Sprintf(
+					"The image for %q (%s) is not installed on this server yet. Ask an administrator to build it (installer/build-workspace-images.sh %s) or choose another template.",
+					tpl.Name, tpl.ImageReference, strings.TrimSuffix(strings.TrimPrefix(tpl.ImageReference, "itk-cloud/"), ":1.0"))})
+			}
 		}
 		if in.ProjectID != nil {
 			var role *string

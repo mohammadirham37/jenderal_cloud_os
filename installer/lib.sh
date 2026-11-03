@@ -99,5 +99,5 @@ itk_version() { cat "$1/VERSION" 2>/dev/null || echo "unknown"; }
 
 run_itkctl() { # runs itkctl as the service user with the production env
 	sudo -u "$ITK_USER" env ITK_CLOUD_ENV_FILE="$ITK_ETC/itk-cloud.env" HOME="$ITK_STATE" \
-		bash -c "set -a; . '$ITK_ETC/itk-cloud.env'; set +a; cd '$ITK_STATE' && exec '$ITK_PREFIX/current/bin/itkctl' \"\$@\"" itkctl "$@"
+		bash -c "cd '$ITK_STATE' && exec '$ITK_PREFIX/current/bin/itkctl' \"\$@\"" itkctl "$@"
 }

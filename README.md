@@ -124,7 +124,7 @@ docs/          documentation and ADRs
 
 ## Status and limitations
 
-Version `0.1.3` (pre-production). All phases of the specification are implemented. Verified by
+Version `0.1.5` (pre-production). All phases of the specification are implemented. Verified by
 Go unit/integration/security tests, Playwright browser E2E (admin MFA + full MVP journey), a
 basic load test, and an install + three upgrades on an Ubuntu 24.04 staging system (systemd,
 Caddy HTTPS, loopback quota volumes). Still to do before production: run the installer and the

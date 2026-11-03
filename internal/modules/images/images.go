@@ -210,3 +210,52 @@ func (h *Handler) Pull(w http.ResponseWriter, r *http.Request) error {
 	}
 	return httpx.OK(w, img)
 }
+
+// CheckPresent asks the host agent whether the image exists in the local
+// Docker image store (without pulling) and records the result in
+// container_images.pulled_at, which drives "image installed" in the UI.
+func CheckPresent(ctx context.Context, pool *pgxpool.Pool, ag *agent.Agent, id uuid.UUID, reference string) (bool, error) {
+	var info agentproto.ImageInfo
+	if err := ag.Do(ctx, agentproto.OpImageEnsure, id.String(), "check workspace image", agentproto.ImageEnsure{Reference: reference}, &info); err != nil {
+		return false, err
+	}
+	if info.Present {
+		_, err := pool.Exec(ctx, `UPDATE container_images SET pulled_at=coalesce(pulled_at, now()), size_bytes=$2, updated_at=now() WHERE id=$1`, id, info.SizeBytes)
+		return true, err
+	}
+	_, err := pool.Exec(ctx, `UPDATE container_images SET pulled_at=NULL, size_bytes=NULL, updated_at=now() WHERE id=$1 AND pulled_at IS NOT NULL`, id)
+	return false, err
+}
+
+// Sync refreshes the presence of every registered image. It stops at the
+// first agent error (e.g. the agent or Docker is unavailable) so a down
+// runtime does not mark every image as missing.
+func Sync(ctx context.Context, pool *pgxpool.Pool, ag *agent.Agent) error {
+	rows, err := pool.Query(ctx, `SELECT id, reference FROM container_images ORDER BY reference`)
+	if err != nil {
+		return err
+	}
+	type ref struct {
+		id  uuid.UUID
+		ref string
+	}
+	var refs []ref
+	for rows.Next() {
+		var r ref
+		if err := rows.Scan(&r.id, &r.ref); err != nil {
+			rows.Close()
+			return err
+		}
+		refs = append(refs, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range refs {
+		if _, err := CheckPresent(ctx, pool, ag, r.id, r.ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}

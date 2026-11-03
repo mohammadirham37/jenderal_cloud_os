@@ -9,6 +9,7 @@ import (
 	"github.com/itk-cloud/itk-cloud/internal/modules/agent"
 	"github.com/itk-cloud/itk-cloud/internal/modules/backups"
 	"github.com/itk-cloud/itk-cloud/internal/modules/databases"
+	"github.com/itk-cloud/itk-cloud/internal/modules/images"
 	"github.com/itk-cloud/itk-cloud/internal/modules/monitoring"
 	"github.com/itk-cloud/itk-cloud/internal/modules/terminals"
 	"github.com/itk-cloud/itk-cloud/internal/modules/workspaces"
@@ -118,6 +119,9 @@ func (w *Worker) Run(ctx context.Context) {
 			}
 		}
 		return w.S.Monitoring.EvaluateAlerts(ctx, host, hostErr, inv)
+	})
+	periodic(ctx, &wg, log, "image_sync", 15*time.Second, 10*time.Minute, func(ctx context.Context) error {
+		return images.Sync(ctx, w.D.Pool, w.S.Workspaces.Agent)
 	})
 	periodic(ctx, &wg, log, "workspace_usage", 20*time.Second, 5*time.Minute, w.S.Workspaces.RefreshUsage)
 	periodic(ctx, &wg, log, "idle_stop", 30*time.Second, time.Minute, func(ctx context.Context) error {
