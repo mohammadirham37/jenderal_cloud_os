@@ -25,6 +25,7 @@ import (
 	"github.com/itk-cloud/itk-cloud/internal/modules/rbac"
 	"github.com/itk-cloud/itk-cloud/internal/modules/resources"
 	"github.com/itk-cloud/itk-cloud/internal/modules/settings"
+	"github.com/itk-cloud/itk-cloud/internal/modules/sysupdate"
 	"github.com/itk-cloud/itk-cloud/internal/modules/terminals"
 	"github.com/itk-cloud/itk-cloud/internal/modules/users"
 	"github.com/itk-cloud/itk-cloud/internal/modules/workspaces"
@@ -93,6 +94,8 @@ func NewAPIHandler(d *Deps, s *Services) http.Handler {
 	notifH := &notifications.Handler{Pool: d.Pool}
 	backupH := &backups.Handler{Svc: s.Backups}
 	hostH := &hostops.Handler{Pool: d.Pool, Agent: s.Agent}
+	updH := &sysupdate.Handler{Svc: sysupdate.New(d.Cfg.UpdateRepo, d.Cfg.UpdateCheckEnabled, Version, s.Agent),
+		Audit: func(ctx context.Context, e audit.Entry) error { return audit.Record(ctx, d.Pool, e) }}
 	dashH := &dashboard.Handler{Pool: d.Pool, Cfg: d.Cfg, Resources: s.Resources, Version: Version,
 		PlatformName: func() string { return d.Settings.String(context.Background(), "platform.name") }}
 
@@ -277,6 +280,9 @@ func NewAPIHandler(d *Deps, s *Services) http.Handler {
 	private("POST "+v1+"/admin/backups", backupH.Create)
 	private("POST "+v1+"/admin/backups/{id}/restore", backupH.Restore)
 	private("POST "+v1+"/admin/host/emergency-stop", hostH.EmergencyStop)
+	private("GET "+v1+"/admin/system/update", updH.Get)
+	private("POST "+v1+"/admin/system/update/check", updH.Check)
+	private("POST "+v1+"/admin/system/update/start", updH.Start)
 
 	// Unknown API routes return JSON 404.
 	public("/api/", func(w http.ResponseWriter, r *http.Request) error { return httpx.NotFound("Endpoint") })

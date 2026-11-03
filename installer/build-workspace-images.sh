@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIR="$ROOT/deployments/docker/workspace-images"
 TAG="${ITK_IMAGE_TAG:-1.0}"
-ALL=(ubuntu-dev go-dev php-laravel node-dev python-dev python-datascience jupyterlab ml-cuda cpp-dev java-dev web-dev)
+ALL=(ubuntu-dev go-dev php-laravel node-dev python-dev python-datascience jupyterlab ml-cuda cpp-dev java-dev web-dev desktop-browser)
 IMAGES=("$@")
 [ ${#IMAGES[@]} -eq 0 ] && IMAGES=("${ALL[@]}")
 command -v docker >/dev/null || { echo "docker is not installed" >&2; exit 1; }
@@ -14,8 +14,8 @@ for name in "${IMAGES[@]}"; do
   if [ ! -f "$DIR/$name/Dockerfile" ]; then
     echo "unknown image: $name" >&2; failed+=("$name"); continue
   fi
-  echo "==> building itk-cloud/$name:$TAG"
-  if ! docker build --pull -t "itk-cloud/$name:$TAG" -f "$DIR/$name/Dockerfile" "$DIR"; then
+  echo "==> building jenderal/$name:$TAG"
+  if ! docker build --pull -t "jenderal/$name:$TAG" -f "$DIR/$name/Dockerfile" "$DIR"; then
     failed+=("$name")
   fi
 done

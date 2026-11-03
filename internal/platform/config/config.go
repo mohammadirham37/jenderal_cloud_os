@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itk-cloud/itk-cloud/packages/agentproto"
 )
 
 // Config holds runtime configuration shared by the API, worker and CLI.
@@ -75,6 +77,13 @@ type Config struct {
 	WebHealthURL string
 	// ConfigDir holds configuration files included in config backups.
 	ConfigDir string
+
+	// UpdateRepo is the GitHub repository ("owner/name") whose releases are
+	// offered as platform updates. The host agent has its own UPDATE_REPO and
+	// refuses updates from any other repository.
+	UpdateRepo string
+	// UpdateCheckEnabled enables checking GitHub for new releases.
+	UpdateCheckEnabled bool
 }
 
 // IsProduction reports whether the configuration targets production.
@@ -186,6 +195,8 @@ func FromEnv(get func(string) string) (*Config, error) {
 		AppProxyOrigin:         strings.TrimRight(str("APP_PROXY_ORIGIN", ""), "/"),
 		WebHealthURL:           str("WEB_HEALTH_URL", ""),
 		ConfigDir:              str("CONFIG_DIR", "/etc/itk-cloud"),
+		UpdateRepo:             str("UPDATE_REPO", "mohammadirham37/jenderal_cloud_os"),
+		UpdateCheckEnabled:     boolean("UPDATE_CHECK_ENABLED", true),
 	}
 
 	switch c.Env {
@@ -258,6 +269,9 @@ func FromEnv(get func(string) string) (*Config, error) {
 	}
 	if c.TerminalSessionTTL <= 0 || c.SessionTTL <= 0 || c.SessionIdleTTL <= 0 {
 		errs = append(errs, fmt.Errorf("session and terminal TTLs must be positive"))
+	}
+	if !agentproto.ValidRepo(c.UpdateRepo) {
+		errs = append(errs, fmt.Errorf("UPDATE_REPO must be a GitHub repository slug like owner/name"))
 	}
 	if c.BackupRetentionDays < 1 {
 		errs = append(errs, fmt.Errorf("BACKUP_RETENTION_DAYS must be at least 1"))

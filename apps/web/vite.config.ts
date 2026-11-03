@@ -42,6 +42,9 @@ export default defineConfig({
 					'font-src': ['self', 'data:'],
 					'connect-src': ['self'],
 					'object-src': ['none'],
+					// Workspace apps (VS Code, web browser, JupyterLab) are framed from
+					// the separate app-proxy origin, which is only known at runtime.
+					'frame-src': ['self', 'https:', 'http:'],
 					'base-uri': ['self'],
 					'form-action': ['self'],
 					// Same-origin framing only: console pages run inside desktop windows.

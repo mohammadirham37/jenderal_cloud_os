@@ -9,4 +9,4 @@ exec jupyter lab --no-browser --ip=0.0.0.0 --port=8888 \
   --IdentityProvider.token="${ITK_APP_TOKEN:?ITK_APP_TOKEN is required}" \
   --ServerApp.allow_origin="${ITK_APP_ORIGIN:-}" \
   --ServerApp.trust_xheaders=True \
-  --ServerApp.root_dir=/home/itk
+  --ServerApp.root_dir=/home/jenderal

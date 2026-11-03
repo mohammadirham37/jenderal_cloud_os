@@ -1,6 +1,7 @@
 // Window manager for the desktop shell: open/focus/close, minimise,
 // maximise, snapping, cascade placement and per-user persistence.
 import { appById, type DesktopApp } from './apps';
+import { DEFAULT_WALLPAPER } from './wallpapers';
 
 export type Snap = 'none' | 'left' | 'right' | 'max';
 
@@ -47,7 +48,7 @@ export class WindowManager {
 	interacting = $state(false);
 	/** Snap target preview during a drag. */
 	snapPreview = $state<Snap>('none');
-	wallpaper = $state('kontur');
+	wallpaper = $state(DEFAULT_WALLPAPER);
 	viewport = $state<Viewport>({ w: 1280, h: 800 });
 	#z = 10;
 	#key = '';
@@ -208,7 +209,7 @@ export class WindowManager {
 			const raw = localStorage.getItem(this.#key);
 			if (!raw) return;
 			const s = JSON.parse(raw) as Saved;
-			this.wallpaper = s.wallpaper || 'kontur';
+			this.wallpaper = s.wallpaper || DEFAULT_WALLPAPER;
 			this.windows = (s.windows ?? [])
 				.filter((w) => appById(w.appId))
 				.map((w) => ({ ...w, src: w.path, z: ++this.#z }));

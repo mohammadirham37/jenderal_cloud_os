@@ -200,7 +200,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Workspace, error)
 			if present, err := images.CheckPresent(ctx, s.Pool, s.Agent, tpl.ImageID, tpl.ImageReference); err == nil && !present {
 				return httpx.Validation(map[string]string{"template_id": fmt.Sprintf(
 					"The image for %q (%s) is not installed on this server yet. Ask an administrator to build it (installer/build-workspace-images.sh %s) or choose another template.",
-					tpl.Name, tpl.ImageReference, strings.TrimSuffix(strings.TrimPrefix(tpl.ImageReference, "itk-cloud/"), ":1.0"))})
+					tpl.Name, tpl.ImageReference, strings.TrimSuffix(strings.TrimPrefix(tpl.ImageReference, "jenderal/"), ":1.0"))})
 			}
 		}
 		if in.ProjectID != nil {

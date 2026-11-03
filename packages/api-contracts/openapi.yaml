@@ -1474,7 +1474,7 @@ paths:
       tags: [Images]
       operationId: pullImage
       summary: Check the image on the host and pull it when missing (images.manage)
-      description: Synchronous (up to 20 minutes). Locally built `itk-cloud/*` images cannot be pulled; build them with installer/build-workspace-images.sh first.
+      description: Synchronous (up to 20 minutes). Locally built `jenderal/*` images cannot be pulled; build them with installer/build-workspace-images.sh first.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -2549,7 +2549,7 @@ paths:
       tags: [Containers]
       operationId: createContainer
       summary: Add a container to a workspace (containers.create + edit access) — asynchronous
-      description: The additional container shares the workspace volume (`/home/itk`) and network. Counts toward `max_containers`. Supports `Idempotency-Key`.
+      description: The additional container shares the workspace volume (`/home/jenderal`) and network. Counts toward `max_containers`. Supports `Idempotency-Key`.
       security:
         - cookieAuth: []
           csrfToken: []
@@ -4483,7 +4483,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        reference: { type: string, examples: ['itk-cloud/ubuntu-dev:1.0'] }
+        reference: { type: string, examples: ['jenderal/ubuntu-dev:1.0'] }
         description: { type: string }
         gpu_capable: { type: boolean }
         is_allowed: { type: boolean }

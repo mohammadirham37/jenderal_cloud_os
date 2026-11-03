@@ -6,7 +6,7 @@ export interface GPUProcess {
 	pid: number;
 	name: string;
 	memory_bytes: number;
-	/** ITK container UUID when attributable. */
+	/** Jenderal Cloud OS container UUID when attributable. */
 	container_id?: string;
 }
 

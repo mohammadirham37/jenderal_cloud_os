@@ -1,0 +1,34 @@
+#!/bin/bash
+# Starts the remote browser session: virtual display, minimal window manager,
+# Firefox (restarted if closed), a VNC server on loopback and the noVNC web
+# client on $ITK_APP_PORT. Started by itk-app-gate on first use; the gate
+# stops the whole process group when the session is idle.
+set -eu
+PORT="${ITK_APP_PORT:-6081}"
+GEOMETRY="${ITK_DESKTOP_GEOMETRY:-1600x900}"
+export DISPLAY=:1
+export MOZ_ENABLE_WAYLAND=0 NO_AT_BRIDGE=1
+
+mkdir -p "$HOME/Downloads" "$HOME/.mozilla/jenderal"
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+
+Xvfb :1 -screen 0 "${GEOMETRY}x24" -nolisten tcp -dpi 96 >/tmp/xvfb.log 2>&1 &
+i=0
+while [ ! -S /tmp/.X11-unix/X1 ] && [ "$i" -lt 100 ]; do i=$((i + 1)); sleep 0.1; done
+
+matchbox-window-manager -use_titlebar no -use_cursor yes >/tmp/wm.log 2>&1 &
+
+(
+  while :; do
+    firefox-esr --no-remote --profile "$HOME/.mozilla/jenderal" >/tmp/firefox.log 2>&1 || true
+    sleep 1
+  done
+) &
+
+x11vnc -display :1 -rfbport 5901 -localhost -nopw -forever -shared -quiet \
+  -noxdamage -noxrecord -cursor arrow >/tmp/x11vnc.log 2>&1 &
+
+i=0
+while ! (exec 3<>/dev/tcp/127.0.0.1/5901) 2>/dev/null && [ "$i" -lt 100 ]; do i=$((i + 1)); sleep 0.1; done
+
+exec websockify --web /usr/share/novnc "127.0.0.1:${PORT}" 127.0.0.1:5901

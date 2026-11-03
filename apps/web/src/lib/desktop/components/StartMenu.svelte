@@ -3,6 +3,7 @@
 	import { categories, visibleApps, type DesktopApp } from '../apps';
 	import { wallpapers } from '../wallpapers';
 	import { wm } from '../windows.svelte';
+	import Logo from '#lib/components/brand/Logo.svelte';
 	import { api } from '#lib/api/client.ts';
 	import type { Quota, Usage } from '#lib/api/types.ts';
 	import { auth } from '#lib/stores/auth.svelte.ts';
@@ -236,6 +237,12 @@
 				</div>
 			</div>
 			<div class="mt-auto space-y-1">
+				<Logo
+					variant="wordmark"
+					size={24}
+					label={null}
+					class="mb-2 border-b border-white/8 px-2 pb-3 text-white/85"
+				/>
 				<a
 					href="/dashboard"
 					class="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-white/70 transition hover:bg-white/8 hover:text-white"

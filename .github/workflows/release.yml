@@ -1,0 +1,107 @@
+name: Release
+
+# Publishes GitHub release v$VERSION (tarballs for amd64 and arm64 plus
+# .sha256 files) whenever main contains a VERSION that has no release yet.
+# Installed servers offer that release in Administration → System update.
+# To ship a new version: bump VERSION and push to main.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read VERSION and check for an existing release
+        id: version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+            echo "::error::VERSION '$version' is not a semantic version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "Release v$version already exists; nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "::warning::Tag v$version exists without a release; bump VERSION or delete the tag."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.version.outputs.exists == 'false'
+        with:
+          go-version-file: go.mod
+
+      - uses: pnpm/action-setup@v4
+        if: steps.version.outputs.exists == 'false'
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.exists == 'false'
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Unit tests
+        if: steps.version.outputs.exists == 'false'
+        run: go test -count=1 ./internal/... ./packages/... ./apps/...
+
+      - name: Build release tarballs
+        if: steps.version.outputs.exists == 'false'
+        run: make release GOARCHS="amd64 arm64"
+
+      - name: Release notes
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          prev="$(git describe --tags --abbrev=0 --match 'v*' 2> /dev/null || true)"
+          {
+            echo "## Jenderal Cloud OS v$version"
+            echo
+            if [ -n "$prev" ]; then
+              echo "Changes since $prev:"
+              echo
+              git log --no-merges --pretty='- %s (%h)' "$prev..HEAD"
+            else
+              echo "Changes:"
+              echo
+              git log --no-merges --pretty='- %s (%h)' -n 50
+            fi
+            echo
+            echo "Install or upgrade: see docs/installation.md and docs/operations.md (System update)."
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          flags=()
+          if [[ "$version" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "v$version" dist/*.tar.gz dist/*.tar.gz.sha256 \
+            --target "$GITHUB_SHA" --title "Jenderal Cloud OS v$version" \
+            --notes-file release-notes.md "${flags[@]}"

@@ -11,6 +11,12 @@ ITK_WS_GROUP="itk-workspace"
 NODE_VERSION="${ITK_NODE_VERSION:-v24.22.2}"   # Node.js Active LTS (Krypton), verified against nodejs.org/dist
 SERVICES_START_ORDER=(itk-cloud-agent itk-cloud-api itk-cloud-worker itk-cloud-web)
 SERVICES_STOP_ORDER=(itk-cloud-web itk-cloud-worker itk-cloud-api itk-cloud-agent)
+# Self-update (installer/self-update.sh, run by itk-cloud-updater.service).
+# The updater unit is deliberately NOT in the SERVICES_* lists: upgrade.sh
+# must never stop the unit that is running it.
+ITK_UPDATE_DIR="${ITK_UPDATE_DIR:-/var/lib/itk-cloud-update}" # root-only: request, status, downloads
+ITK_LOG_DIR="${ITK_LOG_DIR:-/var/log/itk-cloud}"
+UNITS=(itk-cloud-api.service itk-cloud-worker.service itk-cloud-agent.service itk-cloud-web.service itk-cloud-updater.service itk-cloud.target)
 
 if [ -t 1 ]; then
 	C_RED=$'\e[31m'; C_GRN=$'\e[32m'; C_YLW=$'\e[33m'; C_BLU=$'\e[34m'; C_BLD=$'\e[1m'; C_RST=$'\e[0m'
@@ -100,4 +106,9 @@ itk_version() { cat "$1/VERSION" 2>/dev/null || echo "unknown"; }
 run_itkctl() { # runs itkctl as the service user with the production env
 	sudo -u "$ITK_USER" env ITK_CLOUD_ENV_FILE="$ITK_ETC/itk-cloud.env" HOME="$ITK_STATE" \
 		bash -c "cd '$ITK_STATE' && exec '$ITK_PREFIX/current/bin/itkctl' \"\$@\"" itkctl "$@"
+}
+
+ensure_update_dirs() { # root-owned directories of the self-updater
+	install -d -m 0700 -o root -g root "$ITK_UPDATE_DIR"
+	install -d -m 0750 -o root -g root "$ITK_LOG_DIR"
 }

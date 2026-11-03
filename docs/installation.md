@@ -215,6 +215,8 @@ the process with a list of errors.
 | `CONFIG_DIR` | `/etc/itk-cloud` | Archived by `config` backups (readable files only). |
 | `WEB_HEALTH_URL` | empty | Probed for the `web` service status. |
 | `PROMETHEUS_URL`, `GRAFANA_URL` | empty | Links shown in the console. |
+| `UPDATE_REPO` | `mohammadirham37/jenderal_cloud_os` | GitHub `owner/name` whose releases are offered in *Administration → System update*. Must equal the agent's value. |
+| `UPDATE_CHECK_ENABLED` | `true` | Check GitHub for new releases (API on demand, worker every 6 h). `false` for offline servers. |
 | `ITK_CLOUD_ENV_FILE` | — | Path of the env file to load. |
 
 The installer also stores `ITK_DB_PASSWORD`, `ITK_PROJECT_DB_PASSWORD` and
@@ -238,6 +240,8 @@ The installer also stores `ITK_DB_PASSWORD`, `ITK_PROJECT_DB_PASSWORD` and
 | `AGENT_APPARMOR_PROFILE` | `docker-default` | Applied when AppArmor is enabled. |
 | `AGENT_SECCOMP_PROFILE` | empty (Docker default) | Path to a custom seccomp JSON. |
 | `AGENT_MAX_CONCURRENT_OPS` | `32` | |
+| `UPDATE_REPO` | `mohammadirham37/jenderal_cloud_os` | The only repository the self-updater may install from (written by the installer from `itk-cloud.env`). |
+| `AGENT_UPDATE_DIR` / `AGENT_UPDATE_LOG` | `/var/lib/itk-cloud-update` / `/var/log/itk-cloud/update.log` | Self-updater state and log (keep the defaults; `installer/self-update.sh` uses the same paths). |
 | `APP_LOG_LEVEL` | `info` | `debug` enables debug logs. |
 
 Runtime policy (quotas, alerts, MFA enforcement, backups schedule, GPU limits, …) is in
@@ -337,7 +341,7 @@ curl -s https://itk-cloud.lab/health/ready         # from a client that trusts t
 ls -l /run/itk-cloud/agent.sock                     # srw-rw---- root itk-cloud
 journalctl -u itk-cloud-agent -n 20                 # "agent listening", protocol 1
 docker info --format '{{.ServerVersion}} {{.SecurityOptions}}'
-docker image ls 'itk-cloud/*'
+docker image ls 'jenderal/*'
 ```
 
 Then in the browser:
@@ -355,6 +359,10 @@ Then in the browser:
 7. Review quota packages against the hardware inventory (§2) and set `BACKUP_COPY_DIR`.
 
 ## 11. Upgrade
+
+From 0.1.6 on, a super administrator can install new releases from the console
+(*Administration → System update*, see [operations.md › System update](operations.md#system-update));
+that runs the same `installer/upgrade.sh`. Manual upgrade:
 
 ```bash
 tar xzf itk-cloud-<new>-linux-amd64.tar.gz && cd itk-cloud-<new>-linux-amd64

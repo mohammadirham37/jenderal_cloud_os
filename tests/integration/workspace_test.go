@@ -103,7 +103,7 @@ func terminalRun(t *testing.T, c *Client, wsPath, cmd, marker string) string {
 func TestContainerWorkspaceLifecycle(t *testing.T) {
 	e := setup(t, envOpts{})
 	if !e.DockerOK {
-		t.Skip("docker or image itk-cloud/ubuntu-dev:1.0 not available")
+		t.Skip("docker or image jenderal/ubuntu-dev:1.0 not available")
 	}
 	admin := e.AdminClient()
 	student := e.CreateUser(admin, "mhs1", []string{"student"}, "")
@@ -170,7 +170,7 @@ func TestContainerWorkspaceLifecycle(t *testing.T) {
 
 	// Terminal: runs as the unprivileged user, inside the workspace.
 	term := student.Do("POST", "/api/v1/workspaces/"+wsID+"/terminals", map[string]int{"cols": 100, "rows": 30}).Expect(t, 201, "open terminal").Data()
-	out := terminalRun(t, student, str(term, "websocket_path"), "echo ITK-$((40+2)) uid=$(id -u) home=$HOME", "ITK-42 uid=1000 home=/home/itk")
+	out := terminalRun(t, student, str(term, "websocket_path"), "echo ITK-$((40+2)) uid=$(id -u) home=$HOME", "ITK-42 uid=1000 home=/home/jenderal")
 	if !strings.Contains(out, "uid=1000") {
 		t.Fatalf("unexpected terminal output %q", out)
 	}

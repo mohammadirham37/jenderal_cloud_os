@@ -398,7 +398,7 @@ Layout under `WORKSPACE_ROOT` (default `/srv/itk-cloud/workspaces`, mode 0711):
 | After reboot | Agent remounts all volumes at startup and lazily before any access | — |
 | Reported | `capabilities.storage_enforced = true` | `false` |
 
-The data directory is bind-mounted into containers at `/home/itk`
+The data directory is bind-mounted into containers at `/home/jenderal`
 (`Propagation: rprivate`). The container writable layer is separate and is only
 size-limited when `AGENT_CONTAINER_ROOTFS_SIZE` is set and Docker uses overlay2 on XFS with
 project quotas (`pquota`). `/tmp` is a tmpfs (`AGENT_CONTAINER_TMPFS_SIZE`, default 512m,

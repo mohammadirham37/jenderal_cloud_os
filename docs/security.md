@@ -213,7 +213,7 @@ Applied by the agent's `containerCreate` (`apps/agent/internal/server/ops.go`), 
 | Logs | `json-file`, `max-size=10m`, `max-file=3` |
 | Restart policy | `no` |
 | Network | per-workspace bridge `itk-ws-<id>`; ports published on `127.0.0.1` only |
-| Mounts | only the workspace data directory at `/home/itk` (`rprivate`) |
+| Mounts | only the workspace data directory at `/home/jenderal` (`rprivate`) |
 | Extra hosts | `host.docker.internal:host-gateway` (lets workspaces reach host services intended for them, i.e. project databases; firewall and `pg_hba.conf` restrict what is reachable) |
 | Environment | `LD_PRELOAD`, `HOME`, `USER`, `ITK_WORKSPACE_ID`, `ITK_CONTAINER_ID` cannot be overridden by templates |
 | Images | only from the allowlist (`container_images.is_allowed`) via active templates |
@@ -312,7 +312,7 @@ them before production.
    (not implemented). Keep the kernel patched.
 4. **Container writable layer is not quota-limited** unless `AGENT_CONTAINER_ROOTFS_SIZE` is
    set **and** Docker uses overlay2 on XFS mounted with `pquota`. Otherwise a user can fill
-   `/var/lib/docker` by writing outside `/home/itk` (e.g. `/var/tmp`). Mitigate with a
+   `/var/lib/docker` by writing outside `/home/jenderal` (e.g. `/var/tmp`). Mitigate with a
    separate partition for `/var/lib/docker`, the `disk_full` alert, and/or read-only root
    filesystems in templates.
 5. **The `directory` storage driver does not enforce quotas** (usage is only measured). It is

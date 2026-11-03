@@ -27,7 +27,7 @@
 	const allowed = $derived(auth.can(...perms));
 	const canManage = $derived(auth.can('images.manage'));
 	const images = resource(guarded(perms, () => api.get<ContainerImage[]>('/images')));
-	const isLocal = (ref: string) => ref.startsWith('itk-cloud/');
+	const isLocal = (ref: string) => ref.startsWith('jenderal/');
 
 	function replace(img: ContainerImage) {
 		if (images.data) images.set(images.data.map((i) => (i.id === img.id ? img : i)));
@@ -175,7 +175,7 @@
 {:else}
 	<div class="mb-6">
 		<Alert tone="info" title="Local and registry images">
-			Images named <code class="font-mono">itk-cloud/*</code> are built on the server with
+			Images named <code class="font-mono">jenderal/*</code> are built on the server with
 			<code class="font-mono">installer/build-workspace-images.sh</code> and cannot be pulled from a registry;
 			“Check / pull” only verifies that they exist on the host. Other images are pulled from their registry,
 			which can take several minutes.
@@ -273,7 +273,7 @@
 			error={errors.reference}
 			hint={editing
 				? 'The reference cannot be changed; add a new image instead.'
-				: 'e.g. registry.example.org/org/image:1.2 or itk-cloud/python:3.12'}
+				: 'e.g. registry.example.org/org/image:1.2 or jenderal/python:3.12'}
 		>
 			<input
 				id="i-ref"

@@ -422,6 +422,9 @@ or project role. *auth* = any authenticated session that passed MFA/password-cha
 | GET · POST | `/api/v1/admin/backups` | `backup.manage` |
 | POST | `/api/v1/admin/backups/{id}/restore` | `backup.manage`, typed file name, age private key, reason |
 | POST | `/api/v1/admin/host/emergency-stop` | `host.operations.execute`, phrase `STOP ALL WORKLOADS`, reason ≥ 10 chars |
+| GET | `/api/v1/admin/system/update` | `system.update` or `host.operations.view` — installed/latest version, release notes, update job state and log tail |
+| POST | `/api/v1/admin/system/update/check` | `system.update` or `host.operations.view` — re-check GitHub now |
+| POST | `/api/v1/admin/system/update/start` | `system.update`; body `{version, confirm: "v<version>", reason}` (reason 10–500 chars); only the latest release found by the server; `202`, `409` while an update runs |
 
 ## 11. Example session (curl)
 

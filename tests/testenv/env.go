@@ -8,7 +8,7 @@
 //	TEST_REDIS_URL     redis URL (a dedicated DB number; it is flushed)
 //
 // Docker-based tests additionally require a reachable Docker daemon
-// (TEST_DOCKER_SOCKET) and the image itk-cloud/ubuntu-dev:1.0.
+// (TEST_DOCKER_SOCKET) and the image jenderal/ubuntu-dev:1.0.
 package testenv
 
 import (
@@ -117,7 +117,7 @@ func dockerSocket() string {
 }
 
 func dockerAvailable() bool {
-	out, err := exec.Command("docker", "image", "inspect", "itk-cloud/ubuntu-dev:1.0", "--format", "{{.Id}}").CombinedOutput()
+	out, err := exec.Command("docker", "image", "inspect", "jenderal/ubuntu-dev:1.0", "--format", "{{.Id}}").CombinedOutput()
 	return err == nil && strings.HasPrefix(strings.TrimSpace(string(out)), "sha256:")
 }
 

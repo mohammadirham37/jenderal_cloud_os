@@ -1,0 +1,21 @@
+[Unit]
+Description=Jenderal Cloud OS updater (installs a release requested from the console)
+Documentation=file:///opt/itk-cloud/docs/operations.md
+After=network-online.target
+Wants=network-online.target
+# Started only by the host agent (platform.update) after it wrote a request.
+ConditionPathExists=/var/lib/itk-cloud-update/request.json
+
+# Deliberately independent of itk-cloud.target and the itk-cloud-* services
+# (no PartOf/BindsTo/Requires and no [Install] section): upgrade.sh stops and
+# restarts those services, and this unit must keep running while it does.
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/itk-cloud/current/installer/self-update.sh
+Environment=NON_INTERACTIVE=1
+StandardInput=null
+TimeoutStartSec=45min
+UMask=0022
+Nice=5

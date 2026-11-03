@@ -125,6 +125,8 @@ GPU UUIDs `^(GPU|MIG)-[0-9a-fA-F-]{8,64}$`; env keys `^[A-Z_][A-Z0-9_]{0,63}$`; 
 | `host.metrics` | `{}` | `HostMetrics`: CPU (overall, per core), load 1/5/15, memory/swap, disks (physical filesystems; workspace mounts, `/snap`, `/var/lib/docker` excluded), net rx/tx bytes/s, uptime, `docker{available, version, error, containers_running/stopped/paused, images}` | |
 | `gpu.inventory` | `{}` | `GPUInventory{available, error, gpus[]}` | Never fails; without `nvidia-smi` → `available:false` with an error message ([gpu.md](gpu.md)). |
 | `emergency.stop_all` | `{}` | `{"stopped": n, "failed": n}` | Stops every running container labelled `itk.managed=true` (10 s grace). |
+| `platform.update` | `{version, repo, arch}` | update status | Version `X.Y.Z[-pre]`; `repo` must equal the agent's `UPDATE_REPO` and `arch` its own architecture. Writes the root-only `/var/lib/itk-cloud-update/request.json` and runs `systemctl start --no-block itk-cloud-updater.service`; `conflict` while an update runs. The agent downloads and executes nothing itself ([operations.md › System update](operations.md#system-update)). |
+| `platform.update_status` | `{}` | `{state, version, from_version, message, started_at, updated_at, finished_at, unit_active, log[]}` | Reads the updater's `status.json` plus the last 100 lines of `/var/log/itk-cloud/update.log`. A running state whose unit is gone for > 2 min is reported as `failed`. |
 
 ### 5.2 Workspace storage and native users
 
@@ -185,7 +187,7 @@ owner of the data directory.
 | `cpu_millis`, `memory_bytes`, `pids_limit` | native only: limits of the transient systemd scope |
 | `idle_timeout_sec`, `max_duration_sec` | both ≥ 60 |
 
-Container: `docker exec` with a TTY as `uid:uid`, working directory `/home/itk`, command
+Container: `docker exec` with a TTY as `uid:uid`, working directory `/home/jenderal`, command
 `/bin/sh -c 'if [ -x /bin/bash ]; then exec /bin/bash -l; else exec /bin/sh -l; fi'`.
 Native: `systemd-run --scope --quiet --collect --uid --gid --slice=itk-native.slice -p TasksMax=max(pids,64) -p MemoryMax -p MemorySwapMax=0 -p CPUQuota=<cpu_millis/10>% -- /bin/bash -l`
 in a PTY with a minimal environment.
@@ -246,7 +248,7 @@ error message. These operations are always logged at `info`; the rest at `debug`
 `workspace.provision`, `workspace.destroy`, `container.create|start|stop|restart|remove`,
 `image.ensure`, `files.delete|rename|upload|write|download`, `terminal.attach`,
 `native.user_ensure`, `backup.workspace_files`, `restore.workspace_files`,
-`emergency.stop_all`.
+`emergency.stop_all`, `platform.update`.
 
 Terminal sessions additionally log their end with reason and duration. Rejected
 (unauthenticated) requests are logged at `warn`. Logs go to stdout (journald:

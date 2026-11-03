@@ -6,11 +6,11 @@ natively on the host (see docs/installation.md) and does not run in Docker.
 
 All images:
 
-- run as the unprivileged user `itk` (uid/gid 1000), never root;
+- run as the unprivileged user `jenderal` (uid/gid 1000), never root;
 - contain no SSH server and no sudo;
-- use `/home/itk` as the home directory, which Jenderal Cloud OS bind-mounts from the
+- use `/home/jenderal` as the home directory, which Jenderal Cloud OS bind-mounts from the
   workspace volume (quota-limited);
-- start with `itk-entrypoint`, which seeds shell dotfiles into an empty home.
+- start with `jenderal-entrypoint`, which seeds shell dotfiles into an empty home.
 
 Build all images on the server with:
 

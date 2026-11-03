@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/itk-cloud/itk-cloud/packages/agentproto"
 )
 
 // Config is the agent configuration.
@@ -28,6 +30,16 @@ type Config struct {
 	AppArmorProfile  string
 	SeccompProfile   string // path to a custom seccomp JSON; empty = Docker default
 	MaxConcurrentOps int
+	// ToolsDir holds host-provided tools mounted read-only into workspace
+	// containers at /opt/itk-tools (bin/itk-app-gate, code-server/).
+	ToolsDir string
+	// Platform self-update (platform.update). UpdateRepo is the only GitHub
+	// repository the updater may download releases from; it comes from the
+	// root-only agent configuration, never from the API.
+	UpdateRepo    string
+	UpdateDir     string // root-owned state dir: request.json, status.json, downloads
+	UpdateLogFile string
+	UpdateUnit    string
 }
 
 // Load reads configuration from the environment.
@@ -53,6 +65,11 @@ func Load() (*Config, error) {
 		LogLevel:        get("APP_LOG_LEVEL", "info"),
 		AppArmorProfile: get("AGENT_APPARMOR_PROFILE", "docker-default"),
 		SeccompProfile:  get("AGENT_SECCOMP_PROFILE", ""),
+		ToolsDir:        get("AGENT_TOOLS_DIR", "/opt/itk-cloud/tools"),
+		UpdateRepo:      get("UPDATE_REPO", "mohammadirham37/jenderal_cloud_os"),
+		UpdateDir:       get("AGENT_UPDATE_DIR", "/var/lib/itk-cloud-update"),
+		UpdateLogFile:   get("AGENT_UPDATE_LOG", "/var/log/itk-cloud/update.log"),
+		UpdateUnit:      "itk-cloud-updater.service",
 	}
 	if f := get("AGENT_SHARED_SECRET_FILE", ""); f != "" {
 		b, err := os.ReadFile(f)
@@ -74,13 +91,17 @@ func Load() (*Config, error) {
 	if len(c.SharedSecret) < 32 {
 		errs = append(errs, errors.New("AGENT_SHARED_SECRET must be at least 32 characters"))
 	}
-	for k, v := range map[string]string{"AGENT_SOCKET_PATH": c.SocketPath, "WORKSPACE_ROOT": c.WorkspaceRoot, "BACKUP_ROOT": c.BackupRoot, "DOCKER_SOCKET": c.DockerSocket} {
+	for k, v := range map[string]string{"AGENT_SOCKET_PATH": c.SocketPath, "WORKSPACE_ROOT": c.WorkspaceRoot, "BACKUP_ROOT": c.BackupRoot, "DOCKER_SOCKET": c.DockerSocket,
+		"AGENT_UPDATE_DIR": c.UpdateDir, "AGENT_UPDATE_LOG": c.UpdateLogFile} {
 		if !filepath.IsAbs(v) {
 			errs = append(errs, fmt.Errorf("%s must be absolute", k))
 		}
 	}
 	if c.StorageDriver != "loopback" && c.StorageDriver != "directory" {
 		errs = append(errs, errors.New("AGENT_STORAGE_DRIVER must be loopback or directory"))
+	}
+	if !agentproto.ValidRepo(c.UpdateRepo) {
+		errs = append(errs, errors.New("UPDATE_REPO must be a GitHub owner/name slug"))
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)

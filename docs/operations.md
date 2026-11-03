@@ -15,6 +15,7 @@ Related: [installation](installation.md) · [backup & restore](backup-restore.md
 | `itk-cloud-worker.service` | `itk-cloud-worker` | itk-cloud | Jobs and periodic tasks; refuses to start with pending migrations. |
 | `itk-cloud-web.service` | `node build/index.js` | itk-cloud | `127.0.0.1:3000`; env `/etc/itk-cloud/web.env`. |
 | `itk-cloud.target` | — | — | Groups the four services. |
+| `itk-cloud-updater.service` | `installer/self-update.sh` (oneshot) | root | Started only by the agent for a console-requested update; not part of the target, never stopped by `upgrade.sh`. Log `/var/log/itk-cloud/update.log`. |
 | `caddy`, `postgresql`, `redis-server`, `docker` | system packages | — | |
 
 ```bash
@@ -186,6 +187,56 @@ curl -sk -b $JAR -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
 If the console itself is unreachable: `sudo docker ps -q --filter label=itk.managed=true | xargs -r sudo docker stop`
 (the next metrics run reconciles the workspace states).
 
+### System update
+
+New releases are published on GitHub by `.github/workflows/release.yml`: every push to `main`
+whose `VERSION` has no release yet builds `make release GOARCHS="amd64 arm64"` and creates
+release `v<VERSION>` with `itk-cloud-<ver>-linux-<arch>.tar.gz` and `.sha256` assets (notes =
+commit messages since the previous tag). To ship a version: bump `VERSION`, push to `main`.
+
+On the server, *Administration → System update* (view: `system.update` or
+`host.operations.view`; install: `system.update`, super_admin only) shows the installed and
+latest version, release notes and the last check. The API checks
+`https://api.github.com/repos/$UPDATE_REPO/releases/latest` on demand (cached 10 min, *Check
+now* forces it); the worker checks every 6 h and sends one notification per new release to
+holders of `system.update`. Offline servers simply show the check error; set
+`UPDATE_CHECK_ENABLED=false` to turn checks off.
+
+*Update to vX* requires typing `vX` and a reason (≥ 10 chars) and is audited
+(`system.update`). Flow:
+
+1. The API accepts only the latest release it found itself (newer than the running version,
+   with a tarball for this architecture) — the browser cannot supply URLs, repositories or
+   other versions.
+2. The agent (`platform.update`) checks the repository against its own `UPDATE_REPO`
+   (`/etc/itk-cloud/agent.env`, root-only) and the CPU architecture, writes
+   `/var/lib/itk-cloud-update/request.json` (root, 0700 directory) and starts
+   `itk-cloud-updater.service`.
+3. The updater (`installer/self-update.sh` of the installed release) downloads the tarball
+   and `.sha256` over HTTPS from `github.com/<repo>/releases/download/v<ver>/`, verifies the
+   checksum and archive paths, extracts it to `/var/lib/itk-cloud-update/releases/` and runs
+   that release's `installer/upgrade.sh --yes` (pre-upgrade backup, migrations, restart,
+   health check, automatic binary rollback — see [installation.md §11](installation.md#11-upgrade)).
+4. Progress is written to `/var/lib/itk-cloud-update/status.json` (`queued → downloading →
+   verifying → upgrading → succeeded | failed`); the console polls it together with the last
+   100 lines of `/var/log/itk-cloud/update.log` and offers a reload once the new version
+   answers. The console is unavailable for a short time while services restart.
+
+The updater runs in its own unit, so it survives the restart of the agent and API. Trust
+model: the checksum protects against corrupted downloads; authenticity rests on HTTPS and on
+who can publish releases in the GitHub repository — protect it (2FA, branch protection).
+
+```bash
+systemctl status itk-cloud-updater                      # last run
+sudo cat /var/lib/itk-cloud-update/status.json
+sudo tail -f /var/log/itk-cloud/update.log              # previous run: update.log.1
+```
+
+If an update fails, the status shows the reason; `upgrade.sh` has already rolled back to the
+previous release if the switch had happened. Migrations are not rolled back (see
+installation.md §11). Releases up to 0.1.5 do not contain the updater: upgrade to the first
+release with it manually once (`installer/upgrade.sh`), which installs the unit and directories.
+
 ### Suspend a user
 
 *Users → Suspend* (`users.suspend`, reason required): sessions are revoked immediately,
@@ -285,7 +336,7 @@ Sizing worksheet (fill with your inventory values):
 | Concurrent running workspaces (memory-bound) | usable RAM ÷ average workspace memory limit |
 | Concurrent running workspaces (CPU-bound) | threads × overcommit ÷ average CPU limit |
 | Data disk for workspaces | Σ package storage of expected users (or the overcommit you accept) + growth |
-| Docker images | Σ built image sizes (`docker image ls 'itk-cloud/*'`) + writable layers |
+| Docker images | Σ built image sizes (`docker image ls 'jenderal/*'`) + writable layers |
 | Backups on the server | retention days × (platform DB + project DBs + config/metadata + workspace file archives when enabled) |
 
 Example only (not a recommendation): with 128 GiB RAM, 32 threads and the seeded `basic`

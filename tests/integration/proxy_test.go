@@ -15,8 +15,8 @@ import (
 // carry the per-container token (direct loopback access).
 func TestJupyterLabThroughAppProxy(t *testing.T) {
 	e := setup(t, envOpts{})
-	if !e.DockerOK || exec.Command("docker", "image", "inspect", "itk-cloud/jupyterlab:1.0").Run() != nil {
-		t.Skip("docker or itk-cloud/jupyterlab:1.0 not available")
+	if !e.DockerOK || exec.Command("docker", "image", "inspect", "jenderal/jupyterlab:1.0").Run() != nil {
+		t.Skip("docker or jenderal/jupyterlab:1.0 not available")
 	}
 	admin := e.AdminClient()
 	u := e.CreateUser(admin, "peneliti", []string{"lecturer"}, "standard")

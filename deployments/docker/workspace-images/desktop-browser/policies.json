@@ -1,0 +1,19 @@
+{
+  "policies": {
+    "DisableAppUpdate": true,
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DontCheckDefaultBrowser": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "NoDefaultBookmarks": true,
+    "DisplayBookmarksToolbar": "always",
+    "Bookmarks": [
+      { "Title": "DuckDuckGo", "URL": "https://duckduckgo.com/", "Placement": "toolbar" },
+      { "Title": "Google", "URL": "https://www.google.com/", "Placement": "toolbar" },
+      { "Title": "GitHub", "URL": "https://github.com/", "Placement": "toolbar" },
+      { "Title": "Stack Overflow", "URL": "https://stackoverflow.com/", "Placement": "toolbar" },
+      { "Title": "MDN", "URL": "https://developer.mozilla.org/", "Placement": "toolbar" }
+    ]
+  }
+}

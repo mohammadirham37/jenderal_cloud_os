@@ -129,6 +129,11 @@ func (s *Server) dispatch(ctx context.Context, req *agentproto.Request, p agentp
 		return map[string]int{"files_restored": n}, nil
 	case agentproto.OpEmergencyStopAll:
 		return s.emergencyStopAll(ctx)
+	// Platform self-update (implemented in update.go).
+	case agentproto.OpPlatformUpdate:
+		return s.platformUpdate(ctx, req, p.(*agentproto.PlatformUpdate))
+	case agentproto.OpPlatformUpdateStatus:
+		return s.updateStatus(ctx), nil
 	}
 	return nil, invalid("operation not implemented")
 }
@@ -273,7 +278,7 @@ func (s *Server) containerCreate(ctx context.Context, c *agentproto.ContainerCre
 	if _, err := s.docker.EnsureNetwork(ctx, net, map[string]string{labelManaged: "true", labelWorkspace: c.WorkspaceID}); err != nil {
 		return agentproto.ContainerState{}, err
 	}
-	env := []string{"HOME=/home/itk", "USER=itk", "TERM=xterm-256color", "LANG=C.UTF-8",
+	env := []string{"HOME=/home/jenderal", "USER=jenderal", "TERM=xterm-256color", "LANG=C.UTF-8",
 		"ITK_WORKSPACE_ID=" + c.WorkspaceID, "ITK_CONTAINER_ID=" + c.ContainerID}
 	for k, v := range c.Env {
 		switch k {
@@ -286,6 +291,7 @@ func (s *Server) containerCreate(ctx context.Context, c *agentproto.ContainerCre
 	if len(cmd) == 0 {
 		cmd = []string{"sleep", "infinity"}
 	}
+	cmd, toolsMount := s.wrapWithGate(cmd, c.Ports)
 	exposed := map[string]any{}
 	bindings := map[string]any{}
 	for _, p := range c.Ports {
@@ -329,9 +335,12 @@ func (s *Server) containerCreate(ctx context.Context, c *agentproto.ContainerCre
 		"Ulimits":    []map[string]any{{"Name": "nofile", "Soft": 8192, "Hard": 8192}},
 		"LogConfig":  map[string]any{"Type": "json-file", "Config": map[string]string{"max-size": "10m", "max-file": "3"}},
 		"Mounts": []map[string]any{{
-			"Type": "bind", "Source": data, "Target": "/home/itk",
+			"Type": "bind", "Source": data, "Target": "/home/jenderal",
 			"BindOptions": map[string]any{"Propagation": "rprivate"},
 		}},
+	}
+	if toolsMount != nil {
+		host["Mounts"] = append(host["Mounts"].([]map[string]any), toolsMount)
 	}
 	if s.cfg.RootfsSize != "" {
 		host["StorageOpt"] = map[string]string{"size": s.cfg.RootfsSize}
@@ -347,7 +356,7 @@ func (s *Server) containerCreate(ctx context.Context, c *agentproto.ContainerCre
 		"User":         strconv.Itoa(c.RunAsUID) + ":" + strconv.Itoa(c.RunAsGID),
 		"Env":          env,
 		"Cmd":          cmd,
-		"WorkingDir":   "/home/itk",
+		"WorkingDir":   "/home/jenderal",
 		"Labels":       labels,
 		"ExposedPorts": exposed,
 		"Tty":          false,

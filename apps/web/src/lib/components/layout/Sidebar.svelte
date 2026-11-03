@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { PanelLeftClose, PanelLeftOpen, Cloud } from '@lucide/svelte';
+	import { PanelLeftClose, PanelLeftOpen } from '@lucide/svelte';
+	import Logo from '#lib/components/brand/Logo.svelte';
 	import { navGroups } from './nav';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { appConfig } from '#lib/stores/config.svelte.ts';
@@ -38,11 +39,7 @@
 	aria-label="Main navigation"
 >
 	<div class="flex h-14 items-center gap-2.5 border-b border-white/5 px-4">
-		<div
-			class="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg"
-		>
-			<Cloud class="size-4.5" />
-		</div>
+		<Logo variant="tile" size={32} label={collapsed ? appConfig.name : null} class="rounded-lg" />
 		{#if !collapsed}
 			<div class="min-w-0">
 				<p class="truncate text-sm font-semibold text-white">{appConfig.name}</p>

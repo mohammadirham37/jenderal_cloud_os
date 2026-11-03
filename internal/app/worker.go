@@ -11,6 +11,7 @@ import (
 	"github.com/itk-cloud/itk-cloud/internal/modules/databases"
 	"github.com/itk-cloud/itk-cloud/internal/modules/images"
 	"github.com/itk-cloud/itk-cloud/internal/modules/monitoring"
+	"github.com/itk-cloud/itk-cloud/internal/modules/sysupdate"
 	"github.com/itk-cloud/itk-cloud/internal/modules/terminals"
 	"github.com/itk-cloud/itk-cloud/internal/modules/workspaces"
 	"github.com/itk-cloud/itk-cloud/internal/platform/authz"
@@ -168,6 +169,11 @@ func (w *Worker) Run(ctx context.Context) {
 	periodic(ctx, &wg, log, "retention", 5*time.Minute, 6*time.Hour, func(ctx context.Context) error {
 		_, err := w.S.Backups.ApplyRetention(ctx)
 		return err
+	})
+	// Platform update check: one notification per new release to system.update holders.
+	updates := sysupdate.New(w.D.Cfg.UpdateRepo, w.D.Cfg.UpdateCheckEnabled, Version, nil)
+	periodic(ctx, &wg, log, "update_check", 10*time.Minute, 6*time.Hour, func(ctx context.Context) error {
+		return updates.NotifyNewRelease(ctx, w.D.Pool)
 	})
 	log.Info("worker started", "job_kinds", len(w.Runner.Kinds()), "version", Version)
 	<-ctx.Done()

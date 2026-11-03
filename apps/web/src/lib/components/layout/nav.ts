@@ -2,6 +2,7 @@ import {
 	Activity,
 	Bell,
 	Boxes,
+	CloudDownload,
 	Cpu,
 	Database,
 	FolderKanban,
@@ -104,6 +105,12 @@ export const navGroups: NavGroup[] = [
 				label: 'Host & Agent',
 				icon: Server,
 				perms: ['host.operations.view', 'agent.view']
+			},
+			{
+				href: '/admin/updates',
+				label: 'System Update',
+				icon: CloudDownload,
+				perms: ['system.update', 'host.operations.view']
 			},
 			{
 				href: '/admin/announcements',

@@ -70,7 +70,7 @@ rollback() {
 	warn "Rolling back to $CURRENT"
 	for s in "${SERVICES_STOP_ORDER[@]}"; do systemctl stop "$s" || true; done
 	ln -sfn "$CURRENT_DIR" "$ITK_PREFIX/current.new" && mv -Tf "$ITK_PREFIX/current.new" "$ITK_PREFIX/current"
-	for u in itk-cloud-api.service itk-cloud-worker.service itk-cloud-agent.service itk-cloud-web.service itk-cloud.target; do
+	for u in "${UNITS[@]}"; do
 		[ -f "$CURRENT_DIR/deployments/systemd/$u" ] && install -m 0644 "$CURRENT_DIR/deployments/systemd/$u" "/etc/systemd/system/$u"
 	done
 	systemctl daemon-reload
@@ -82,16 +82,33 @@ rollback() {
 log "Stopping services"
 for s in "${SERVICES_STOP_ORDER[@]}"; do systemctl stop "$s" || true; done
 ln -sfn "$REL" "$ITK_PREFIX/current.new" && mv -Tf "$ITK_PREFIX/current.new" "$ITK_PREFIX/current"
-for u in itk-cloud-api.service itk-cloud-worker.service itk-cloud-agent.service itk-cloud-web.service itk-cloud.target; do
+# Includes itk-cloud-updater.service (refreshed, never stopped: it may be
+# the unit running this script).
+for u in "${UNITS[@]}"; do
 	install -m 0644 "$REL/deployments/systemd/$u" "/etc/systemd/system/$u"
 done
 # Drop-in from 0.1.0 that put the agent in a private mount namespace (breaks
 # workspace volume mounts).
 rm -f /etc/systemd/system/itk-cloud-agent.service.d/10-protect-etc.conf
 systemctl daemon-reload
+ensure_update_dirs
 
 log "Running database migrations"
 run_itkctl migrate | sed 's/^/  /' || rollback
+
+# --- rebrand: workspace images itk-cloud/<name> -> jenderal/<name> (0.1.6) ---
+if command -v docker >/dev/null 2>&1; then
+	docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^itk-cloud/' | while read -r old; do
+		new="jenderal/${old#itk-cloud/}"
+		if docker tag "$old" "$new" && docker rmi "$old" >/dev/null; then
+			ok "Re-tagged workspace image $old as $new"
+		fi
+	done || true
+fi
+# --- end rebrand ---
+
+# Workspace tools (app gate, code-server) used by built-in workspace apps.
+"$SRC/installer/install-workspace-tools.sh" || warn "Workspace tools could not be updated; VS Code may be unavailable."
 
 log "Starting services"
 for s in "${SERVICES_START_ORDER[@]}"; do systemctl start "$s" || rollback; sleep 1; done

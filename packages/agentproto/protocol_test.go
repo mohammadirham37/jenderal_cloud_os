@@ -77,7 +77,7 @@ func TestDecodePayloadRejectsUnknownOpsAndFields(t *testing.T) {
 func TestContainerCreateValidation(t *testing.T) {
 	base := ContainerCreate{
 		WorkspaceID: "00000000-0000-0000-0000-000000000001", ContainerID: "00000000-0000-0000-0000-000000000002",
-		OwnerID: "00000000-0000-0000-0000-000000000003", Name: "main", Image: "itk-cloud/ubuntu-dev:1.0",
+		OwnerID: "00000000-0000-0000-0000-000000000003", Name: "main", Image: "jenderal/ubuntu-dev:1.0",
 		CPUMillis: 1000, MemoryBytes: 1 << 30, PidsLimit: 512, RunAsUID: 1000, RunAsGID: 1000,
 	}
 	if err := base.Validate(); err != nil {

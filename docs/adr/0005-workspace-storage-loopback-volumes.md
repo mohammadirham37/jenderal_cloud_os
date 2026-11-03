@@ -30,7 +30,7 @@ directory), without depending on a particular host filesystem.
 Chosen option 4 (`apps/agent/internal/storage`). The agent creates
 `WORKSPACE_ROOT/<id>/disk.img` of `storage_bytes` (sparse), `mkfs.ext4 -m 0 -E
 root_owner=<uid>:<uid>`, and mounts it `loop,nosuid,nodev` on `<id>/data`, which is bind-mounted
-at `/home/itk` or used as the native home. Volumes are remounted at agent start and lazily
+at `/home/jenderal` or used as the native home. Volumes are remounted at agent start and lazily
 before access. The `directory` driver keeps the same layout without enforcement for
 development; the agent reports `storage_enforced` so the console can show it.
 

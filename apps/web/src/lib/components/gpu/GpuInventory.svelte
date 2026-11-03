@@ -222,7 +222,9 @@
 												>
 												<td class="py-1 pr-3 text-right tabular-nums">{bytes(pr.memory_bytes)}</td>
 												<td class="py-1 font-mono text-fg-muted">
-													{pr.container_id ? pr.container_id.slice(0, 8) : 'Not managed by ITK'}
+													{pr.container_id
+														? pr.container_id.slice(0, 8)
+														: 'Not managed by Jenderal Cloud OS'}
 												</td>
 											</tr>
 										{/each}

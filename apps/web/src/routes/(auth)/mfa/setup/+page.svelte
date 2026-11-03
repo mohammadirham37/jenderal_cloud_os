@@ -65,7 +65,7 @@
 		);
 		const a = document.createElement('a');
 		a.href = URL.createObjectURL(blob);
-		a.download = 'itk-cloud-recovery-codes.txt';
+		a.download = 'jenderal-cloud-os-recovery-codes.txt';
 		a.click();
 		URL.revokeObjectURL(a.href);
 	}

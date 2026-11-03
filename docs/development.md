@@ -137,7 +137,7 @@ go test -count=1 ./tests/security/...
 The harness (`tests/testenv`) creates a fresh database per test, builds and starts a real
 agent process (directory driver), runs the real API handler and worker against it, and
 drains the job queue synchronously. The Docker lifecycle test runs only when Docker is
-reachable and `itk-cloud/ubuntu-dev:1.0` exists; otherwise it is skipped.
+reachable and `jenderal/ubuntu-dev:1.0` exists; otherwise it is skipped.
 
 What the integration tests verify (`tests/integration`): login/MFA/CSRF/RBAC/rank escalation,
 suspension and session revocation, password reset, enumeration resistance, lockout, audit

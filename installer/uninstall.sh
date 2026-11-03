@@ -39,7 +39,8 @@ confirm "Remove Jenderal Cloud OS services and binaries?" || exit 0
 log "Stopping and disabling services"
 for s in "${SERVICES_STOP_ORDER[@]}"; do systemctl disable --now "$s" >/dev/null 2>&1 || true; done
 systemctl disable itk-cloud.target >/dev/null 2>&1 || true
-rm -f /etc/systemd/system/itk-cloud-{api,worker,agent,web}.service /etc/systemd/system/itk-cloud.target
+rm -f /etc/systemd/system/itk-cloud-{api,worker,agent,web,updater}.service /etc/systemd/system/itk-cloud.target
+rm -rf "$ITK_UPDATE_DIR"
 rm -rf /etc/systemd/system/itk-cloud-agent.service.d
 systemctl daemon-reload
 rm -f /usr/local/bin/itkctl
@@ -68,7 +69,7 @@ if [ "$PURGE" = 1 ]; then
 	sudo -u postgres psql -tAc "SELECT rolname FROM pg_roles WHERE rolname LIKE 'itk\\_%' ESCAPE '\\'" |
 		while read -r r; do [ -n "$r" ] && sudo -u postgres psql -qc "DROP ROLE IF EXISTS \"$r\""; done
 	sudo -u postgres psql -qc 'DROP ROLE IF EXISTS itk_cloud' || true
-	rm -rf "$ITK_ETC" "$ITK_STATE" /etc/redis/itk-cloud.conf
+	rm -rf "$ITK_ETC" "$ITK_STATE" "$ITK_LOG_DIR" /etc/redis/itk-cloud.conf
 	sed -i '/^include \/etc\/redis\/itk-cloud.conf/d' /etc/redis/redis.conf 2>/dev/null || true
 	if [ "$PURGE_BACKUPS" = 1 ]; then rm -rf "$ITK_DATA/backups"; else warn "Backups kept in $ITK_DATA/backups"; fi
 	userdel "$ITK_USER" 2>/dev/null || true

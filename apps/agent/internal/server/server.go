@@ -253,7 +253,7 @@ var sensitive = map[string]bool{
 	agentproto.OpFilesDelete: true, agentproto.OpFilesRename: true, agentproto.OpFilesUpload: true,
 	agentproto.OpFilesWrite: true, agentproto.OpFilesDownload: true, agentproto.OpTerminalAttach: true,
 	agentproto.OpNativeUserEnsure: true, agentproto.OpBackupWorkspace: true, agentproto.OpRestoreWorkspace: true,
-	agentproto.OpEmergencyStopAll: true,
+	agentproto.OpEmergencyStopAll: true, agentproto.OpPlatformUpdate: true,
 }
 
 // streamOps may only be invoked through their dedicated endpoints.

@@ -1,5 +1,7 @@
 // Wallpapers of the desktop: layered CSS backgrounds (contour lines are
 // procedurally generated SVGs in /static/wallpapers; grain adds texture).
+// The branded Jenderal Cloud OS wallpapers are self-contained vector SVGs
+// built around the logo mark (a general's shoulder board: star + chevron).
 
 export interface Wallpaper {
 	id: string;
@@ -11,8 +13,23 @@ export interface Wallpaper {
 }
 
 const grain = "url('/wallpapers/grain.svg')";
+const fineGrain = "url('/wallpapers/grain-fine.svg')";
+
+/** Wallpaper for new users (and the lock screen); saved choices are kept. */
+export const DEFAULT_WALLPAPER = 'jenderal';
+
+/** A self-contained SVG wallpaper; its swatch is the artwork itself. */
+function branded(id: string, name: string, base: string, light = false): Wallpaper {
+	const art = `url('/wallpapers/${id}.svg') center/cover no-repeat`;
+	return { id, name, light, css: `${fineGrain}, ${art}, ${base}`, swatch: `${art}, ${base}` };
+}
 
 export const wallpapers: Wallpaper[] = [
+	branded('jenderal', 'Jenderal', '#0b1118'),
+	branded('bintang-lima', 'Bintang Lima', '#0b1426'),
+	branded('komando', 'Komando', '#0d151d'),
+	branded('senja', 'Senja', '#1b1f36'),
+	branded('upacara', 'Upacara', '#efe8dd', true),
 	{
 		id: 'kontur',
 		name: 'Kontur',

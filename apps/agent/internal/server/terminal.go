@@ -70,8 +70,8 @@ func (s *Server) openContainerShell(ctx context.Context, t *agentproto.TerminalA
 	execID, err := s.docker.CreateExec(ctx, id, map[string]any{
 		"AttachStdin": true, "AttachStdout": true, "AttachStderr": true, "Tty": true,
 		"User":        uid + ":" + uid,
-		"WorkingDir":  "/home/itk",
-		"Env":         []string{"TERM=xterm-256color", "HOME=/home/itk", "LANG=C.UTF-8"},
+		"WorkingDir":  "/home/jenderal",
+		"Env":         []string{"TERM=xterm-256color", "HOME=/home/jenderal", "LANG=C.UTF-8"},
 		"Cmd":         []string{"/bin/sh", "-c", "if [ -x /bin/bash ]; then exec /bin/bash -l; else exec /bin/sh -l; fi"},
 		"ConsoleSize": []int{t.Rows, t.Cols},
 	})

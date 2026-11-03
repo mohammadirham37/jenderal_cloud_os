@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Bell, Search } from '@lucide/svelte';
+	import Logo from '#lib/components/brand/Logo.svelte';
 	import { appById, visibleApps } from '../apps';
 	import { wm } from '../windows.svelte';
 	import { auth } from '#lib/stores/auth.svelte.ts';
@@ -81,11 +82,11 @@
 		aria-label="Start"
 	>
 		<span
-			class="relative flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-signal to-[#c2410c] font-display text-[13px] font-bold text-white shadow-[0_0_18px_-2px_rgba(255,122,26,0.65)]"
+			class="relative flex size-7 items-center justify-center drop-shadow-[0_0_10px_rgba(255,122,26,0.55)] transition group-hover:drop-shadow-[0_0_14px_rgba(255,122,26,0.8)]"
 		>
-			JC
+			<Logo size={26} label={null} />
 			<span
-				class="absolute -top-0.5 -right-0.5 size-2 rounded-full border border-[#111821] bg-emerald-400"
+				class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full border border-[#111821] bg-emerald-400"
 			></span>
 		</span>
 		<span class="hidden font-display text-sm font-semibold tracking-wide sm:inline">Jenderal</span>

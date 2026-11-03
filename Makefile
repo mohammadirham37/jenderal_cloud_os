@@ -27,6 +27,7 @@ build-go: ## Build Go binaries for this machine into bin/
 	go build -ldflags "$(LDFLAGS)" -o bin/itk-cloud-worker ./apps/worker
 	go build -ldflags "$(LDFLAGS)" -o bin/itk-cloud-agent ./apps/agent
 	go build -ldflags "$(LDFLAGS)" -o bin/itkctl ./apps/cli
+	go build -ldflags "-s -w" -o bin/itk-app-gate ./apps/app-gate
 
 build-web: ## Build the SvelteKit console (adapter-node)
 	cd $(WEB) && pnpm run build
@@ -97,6 +98,7 @@ release: ## Build release tarballs for Ubuntu 24.04 (GOARCHS="amd64 arm64") into
 			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o $$out/bin/itk-cloud-$$app ./apps/$$app || exit 1; \
 		done; \
 		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o $$out/bin/itkctl ./apps/cli || exit 1; \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -trimpath -ldflags "-s -w" -o $$out/bin/itk-app-gate ./apps/app-gate || exit 1; \
 		cp -a $(WEB)/build $$out/web/build; cp $(WEB)/package.json $$out/web/; \
 		cp -a deployments installer docs $$out/; cp README.md .env.example $$out/; \
 		echo "$(VERSION)" > $$out/VERSION; \

@@ -37,7 +37,7 @@ Options:
                            Provision PostgreSQL databases for projects (default: enabled)
   --ssh-from CIDR          Restrict SSH to this admin network in the firewall (default: allow SSH from anywhere)
   --no-firewall            Do not configure UFW
-  --images LIST            Workspace images to build: none | core (default: ubuntu-dev,python-dev) | all | comma list
+  --images LIST            Workspace images to build: none | core (default: ubuntu-dev,python-dev,desktop-browser) | all | comma list
   --node-tarball FILE      Use a local Node.js tarball (offline install) instead of downloading
   --small-server           Tune for a small VPS (1-2 GB RAM): swap file, smaller PostgreSQL/Redis/
                            connection pools, core images only. Enabled automatically below 3 GB RAM
@@ -198,7 +198,7 @@ confirm "Proceed with installation?" || die "Aborted by user."
 
 if [ "$SMALL" = 1 ]; then
 	[ "$WITH_MONITORING" = 1 ] && warn "Monitoring stack disabled in small-server mode." && WITH_MONITORING=0
-	[ "$IMAGES" = core ] && IMAGES=ubuntu-dev
+	[ "$IMAGES" = core ] && IMAGES=ubuntu-dev,desktop-browser
 fi
 
 # ---------------------------------------------------------------------------
@@ -289,6 +289,7 @@ install -d -m 0711 -o root -g root "$ITK_DATA" "$ITK_DATA/workspaces"
 install -d -m 0770 -o root -g "$ITK_USER" "$ITK_DATA/backups"
 install -d -m 0750 -o root -g "$ITK_USER" "$ITK_ETC"
 install -d -m 0750 -o "$ITK_USER" -g "$ITK_USER" "$ITK_STATE"
+ensure_update_dirs
 install -d -m 0755 "$ITK_PREFIX" "$ITK_PREFIX/releases"
 ok "User $ITK_USER, group $ITK_WS_GROUP, data in $ITK_DATA"
 
@@ -440,6 +441,7 @@ if [ -z "$(env_get "$ENV_FILE" BACKUP_AGE_RECIPIENT)" ]; then
 fi
 
 AGENT_ENV="$ITK_ETC/agent.env"
+UPDATE_REPO_CFG="$(env_get "$ENV_FILE" UPDATE_REPO)"
 umask 077
 {
 	echo "AGENT_SOCKET_PATH=/run/itk-cloud/agent.sock"
@@ -447,6 +449,7 @@ umask 077
 	echo "AGENT_SHARED_SECRET=$(env_get "$ENV_FILE" AGENT_SHARED_SECRET)"
 	echo "AGENT_STORAGE_DRIVER=$STORAGE_DRIVER"
 	echo "AGENT_NATIVE_GROUP=$ITK_WS_GROUP"
+	echo "UPDATE_REPO=${UPDATE_REPO_CFG:-mohammadirham37/jenderal_cloud_os}"
 	echo "WORKSPACE_ROOT=$ITK_DATA/workspaces"
 	echo "BACKUP_ROOT=$ITK_DATA/backups"
 	echo "WORKSPACE_NATIVE_ENABLED=$([ "$ENABLE_NATIVE" = 1 ] && echo true || echo false)"
@@ -471,7 +474,7 @@ ok "Configuration in $ITK_ETC (secrets generated, permissions 0640/0600)"
 # 7. systemd units
 # ---------------------------------------------------------------------------
 log "Installing systemd units"
-for u in itk-cloud-api.service itk-cloud-worker.service itk-cloud-agent.service itk-cloud-web.service itk-cloud.target; do
+for u in "${UNITS[@]}"; do
 	install -m 0644 "$SRC/deployments/systemd/$u" "/etc/systemd/system/$u"
 done
 # Older releases installed a ProtectSystem drop-in; it breaks loop mounts.
@@ -562,11 +565,17 @@ if [ "$WITH_MONITORING" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# 10b. Workspace tools (app gate + VS Code / code-server)
+# ---------------------------------------------------------------------------
+log "Installing workspace tools (VS Code in the browser)"
+"$SRC/installer/install-workspace-tools.sh" || warn "Workspace tools could not be installed; VS Code is unavailable."
+
+# ---------------------------------------------------------------------------
 # 11. Workspace images
 # ---------------------------------------------------------------------------
 case "$IMAGES" in
 none) IMG_LIST=() ;;
-core) IMG_LIST=(ubuntu-dev python-dev) ;;
+core) IMG_LIST=(ubuntu-dev python-dev desktop-browser) ;;
 all) IMG_LIST=() ; ALL_IMAGES=1 ;;
 *) IFS=, read -r -a IMG_LIST <<<"$IMAGES" ;;
 esac
@@ -577,7 +586,7 @@ if [ "${ALL_IMAGES:-0}" = 1 ] || [ ${#IMG_LIST[@]} -gt 0 ]; then
 	else
 		"$SRC/installer/build-workspace-images.sh" "${IMG_LIST[@]}" >>"$LOG_FILE" 2>&1 || warn "Some images failed to build; see $LOG_FILE."
 	fi
-	ok "Images: $(docker images --format '{{.Repository}}:{{.Tag}}' | { grep '^itk-cloud/' || true; } | paste -sd' ' -)"
+	ok "Images: $(docker images --format '{{.Repository}}:{{.Tag}}' | { grep '^jenderal/' || true; } | paste -sd' ' -)"
 fi
 
 # ---------------------------------------------------------------------------

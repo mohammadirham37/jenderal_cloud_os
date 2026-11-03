@@ -3,6 +3,7 @@
 	import type { Announcement } from '#lib/api/types.ts';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { appConfig } from '#lib/stores/config.svelte.ts';
+	import Logo from '#lib/components/brand/Logo.svelte';
 
 	// Large clock + greeting + running workloads, printed straight on the wallpaper.
 	let { light = false }: { light?: boolean } = $props();
@@ -75,9 +76,15 @@
 	>
 		{greeting}, <span class="font-semibold">{first}</span>.
 	</p>
-	<p class="mt-1 animate-rise text-sm opacity-70" style="animation-delay:220ms">
-		{appConfig.name}{#if running !== null}
-			· {running} workspace{running === 1 ? '' : 's'} running{/if}
+	<p
+		class="mt-1 flex animate-rise items-center justify-end gap-1.5 text-sm opacity-70"
+		style="animation-delay:220ms"
+	>
+		<Logo size={14} label={null} />
+		<span
+			>{appConfig.name}{#if running !== null}
+				· {running} workspace{running === 1 ? '' : 's'} running{/if}</span
+		>
 	</p>
 	{#if announcement}
 		<div

@@ -15,7 +15,7 @@ Related: [API](api.md) · [architecture](architecture.md) · [GPU](gpu.md) · [s
 | `type` | `container` | `native` |
 | Availability | always | only with `WORKSPACE_NATIVE_ENABLED=true` (API **and** agent) and the permission `workspaces.native` (only `super_admin` by default) |
 | Isolation | Docker container per the hardening profile, per-workspace network | Dedicated unprivileged Linux account; shells in a transient systemd scope with cgroup limits; shares the host network and filesystem namespace |
-| Storage | Volume mounted at `/home/itk` | Same volume used as the account's home directory |
+| Storage | Volume mounted at `/home/jenderal` | Same volume used as the account's home directory |
 | Terminal | `docker exec` as uid 1000 | `systemd-run --scope` as the dedicated user |
 | Additional containers, app proxy, GPU | yes | no |
 | Recommended for | everyone | trusted users who need host tooling, after explicit approval |
@@ -87,7 +87,7 @@ manual `docker stop`): the container becomes `stopped` with the exit reason, and
 
 A container workspace has a **primary container** (`main`, created with the workspace) and
 can have additional containers (`POST /containers`, requires `containers.create` and edit
-access) from any active template, sharing the workspace volume (`/home/itk`) and network.
+access) from any active template, sharing the workspace volume (`/home/jenderal`) and network.
 Additional containers count toward `max_containers`; the primary container is removed only
 with the workspace. Container states: `created`, `starting`, `running`, `stopping`,
 `stopped`, `failed`, `removing`, `removed`. Stopping the last running container marks the
@@ -211,7 +211,7 @@ The 11 built-in templates (`migrations/00002_seed_reference_data.sql`):
 | Template key | Image (`itk-cloud/<name>:1.0`) | Base image | Runtime | Min CPU / RAM | Rec. CPU / RAM | Storage | Ports | GPU |
 |---|---|---|---|---|---|---|---|---|
 | `ubuntu-dev` | `ubuntu-dev` | `ubuntu:24.04` | Ubuntu 24.04, build-essential, git | 0.5 / 512 MiB | 1 / 1 GiB | 5 GiB | — | none |
-| `go-dev` | `go-dev` | `golang:1.27-bookworm` | Go 1.27 (`GOPATH=/home/itk/go`) | 0.5 / 512 MiB | 1 / 2 GiB | 5 GiB | 8080 | none |
+| `go-dev` | `go-dev` | `golang:1.27-bookworm` | Go 1.27 (`GOPATH=/home/jenderal/go`) | 0.5 / 512 MiB | 1 / 2 GiB | 5 GiB | 8080 | none |
 | `php-laravel` | `php-laravel` | `php:8.4-cli-bookworm` | PHP 8.4, Composer 2 | 0.5 / 512 MiB | 1 / 1 GiB | 5 GiB | 8000 | none |
 | `nodejs-dev` | `node-dev` | `node:24-bookworm` | Node.js 24, npm, pnpm | 0.5 / 512 MiB | 1 / 2 GiB | 5 GiB | 3000, 5173 | none |
 | `python-dev` | `python-dev` | `python:3.13-bookworm` | Python 3.13 | 0.5 / 512 MiB | 1 / 1 GiB | 5 GiB | 8000 | none |
@@ -222,8 +222,8 @@ The 11 built-in templates (`migrations/00002_seed_reference_data.sql`):
 | `java-dev` | `java-dev` | `eclipse-temurin:21-jdk-noble` | JDK 21, Maven, Gradle | 1 / 1 GiB | 2 / 2 GiB | 5 GiB | 8080 | none |
 | `web-dev` | `web-dev` | `node:24-bookworm` | Node.js 24, PHP 8.4, Python 3 | 1 / 1 GiB | 2 / 2 GiB | 10 GiB | 3000, 5173, 8000 | none |
 
-All images run as the unprivileged user `itk` (uid/gid 1000) with home `/home/itk`, contain no
-SSH server and no sudo, and use the entrypoint `itk-entrypoint`, which seeds `.bashrc`/`.profile`
+All images run as the unprivileged user `jenderal` (uid/gid 1000) with home `/home/jenderal`, contain no
+SSH server and no sudo, and use the entrypoint `jenderal-entrypoint`, which seeds `.bashrc`/`.profile`
 into an empty home. Containers receive `ITK_WORKSPACE_ID`, `ITK_CONTAINER_ID`,
 `ITK_WORKSPACE_NAME`, `ITK_PROXY_BASE`, `ITK_APP_TOKEN` (per-container token derived from
 `SESSION_SECRET`; the app proxy injects it as `Authorization: token …`) and (when configured)
@@ -250,9 +250,9 @@ change); new workspaces use the new image. Use *Check / pull* in the image catal
 `pulled_at`/size.
 
 **Adding a custom image/template**: build or pull the image, add it with `POST /images`
-(lowercase reference, e.g. `itk-cloud/rstudio:1.0`), then create a template with
+(lowercase reference, e.g. `jenderal/rstudio:1.0`), then create a template with
 `POST /templates` (min/rec CPU ≥ 100 millicores, memory ≥ 64 MiB, storage ≥ 256 MiB, ports
-1024–65535). The image must run as a non-root user with uid 1000 and should keep `/home/itk`
+1024–65535). The image must run as a non-root user with uid 1000 and should keep `/home/jenderal`
 as home.
 
 ## 9. Linux-native workspaces
@@ -301,9 +301,9 @@ owner and editors at:
 
 ## 11. Storage
 
-Each workspace has one volume (`WORKSPACE_ROOT/<id>/data`, mounted at `/home/itk`) sized
+Each workspace has one volume (`WORKSPACE_ROOT/<id>/data`, mounted at `/home/jenderal`) sized
 `storage_bytes` at creation. With the `loopback` driver the size is a hard limit; with the
 `directory` driver usage is only measured. The storage size cannot be changed after creation
-in the current version. Everything outside `/home/itk` in a container (apt installs,
+in the current version. Everything outside `/home/jenderal` in a container (apt installs,
 `/var/tmp`) lives in the container's writable layer and is lost when the container is
 recreated; `/tmp` is a tmpfs. See [architecture.md §10](architecture.md#10-workspace-storage-drivers).
