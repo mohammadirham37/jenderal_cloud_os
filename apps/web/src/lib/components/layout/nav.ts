@@ -140,6 +140,8 @@ export const segmentLabels: Record<string, string> = {
 	new: 'New',
 	files: 'Files',
 	terminal: 'Terminal',
+	ide: 'VS Code',
+	browser: 'Web Browser',
 	projects: 'Projects',
 	containers: 'Containers',
 	databases: 'Databases',

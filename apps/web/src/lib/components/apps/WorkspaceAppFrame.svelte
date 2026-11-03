@@ -41,6 +41,8 @@
 	let ready = $state(false);
 	let frameKey = $state(0);
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	/** Start the workspace as soon as provisioning finishes (after "Create"). */
+	let autoStart = false;
 
 	const proxyOrigin = $derived((appConfig.value?.app_proxy_origin ?? '').replace(/\/+$/, ''));
 
@@ -121,11 +123,16 @@
 				}
 				actionError =
 					kind === 'vscode'
-						? 'This workspace was created before VS Code was available. Restart it from the Workspaces app to enable VS Code.'
-						: 'The browser session is not published. Restart the workspace from the Workspaces app.';
+						? 'This workspace was created before VS Code was available, so it has no VS Code port. Create a new workspace (your files can be copied with the Files app) to use VS Code.'
+						: 'The browser session is not published. Delete this browser workspace and create it again.';
 				return;
 			}
-			if (['failed', 'suspended'].includes(w.status)) {
+			if (autoStart && ['ready', 'stopped'].includes(w.status) && !w.pending_job) {
+				autoStart = false;
+				await api.post('/workspaces/' + w.id + '/start', undefined, {
+					headers: { 'Idempotency-Key': idempotencyKey() }
+				});
+			} else if (['failed', 'suspended'].includes(w.status)) {
 				actionError = w.status_reason ?? `The workspace is ${w.status}.`;
 				return;
 			}
@@ -158,10 +165,17 @@
 		try {
 			const w = await api.post<Workspace>(
 				'/workspaces',
-				{ name: 'Browser', template_key: BROWSER_TEMPLATE, type: 'container' },
+				{
+					name: 'Browser',
+					template_key: BROWSER_TEMPLATE,
+					type: 'container',
+					// Profile and downloads only: keep the quota for real work.
+					storage_bytes: 1024 ** 3
+				},
 				{ headers: { 'Idempotency-Key': idempotencyKey() } }
 			);
 			workspaces = [w, ...(workspaces ?? [])];
+			autoStart = true;
 			toast.success('Your browser is being prepared. This takes a minute the first time.');
 			await waitUntilReady();
 		} catch (e) {
