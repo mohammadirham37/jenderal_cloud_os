@@ -1,5 +1,5 @@
 [Unit]
-Description=ITK Cloud host agent (allow-listed host operations)
+Description=Jenderal Cloud OS host agent (allow-listed host operations)
 Documentation=file:///opt/itk-cloud/docs/agent-protocol.md
 After=network-online.target docker.service local-fs.target
 Wants=network-online.target docker.service

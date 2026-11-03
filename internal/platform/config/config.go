@@ -1,4 +1,4 @@
-// Package config loads and validates ITK Cloud configuration from the
+// Package config loads and validates Jenderal Cloud OS configuration from the
 // environment. Configuration is validated at startup; the process refuses to
 // start with an invalid or insecure production configuration.
 package config

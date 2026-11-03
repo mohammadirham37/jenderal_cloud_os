@@ -1,4 +1,4 @@
-# ITK Cloud web — conventions
+# Jenderal Cloud OS web — conventions
 
 Read this before adding pages. The foundation (API client, stores, UI
 components, layout, auth pages, dashboard) already exists; build on it.

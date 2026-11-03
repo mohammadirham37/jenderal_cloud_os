@@ -5,7 +5,7 @@
 
 ## Context and problem statement
 
-ITK Cloud runs on a single lab server and is maintained by a small team. The specification
+Jenderal Cloud OS runs on a single lab server and is maintained by a small team. The specification
 (§1 rule 6, §7) asks for a modular monolith in Go with clearly separated modules (auth, users,
 rbac, projects, workspaces, terminals, files, containers, images, databases, gpu, resources,
 monitoring, notifications, audit, backups, settings, agent) and a separate privileged host

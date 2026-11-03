@@ -28,7 +28,7 @@
 	}
 </script>
 
-<svelte:head><title>Forgot password · ITK Cloud</title></svelte:head>
+<svelte:head><title>Forgot password · Jenderal Cloud OS</title></svelte:head>
 
 <h1 class="text-xl font-semibold">Reset your password</h1>
 {#if sent}

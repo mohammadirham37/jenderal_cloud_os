@@ -34,7 +34,7 @@ type Def struct {
 
 // Schema lists every configurable setting.
 var Schema = []Def{
-	{Key: "platform.name", Type: "string", Default: "ITK Cloud", Max: 60, Category: "platform", Description: "Platform display name"},
+	{Key: "platform.name", Type: "string", Default: "Jenderal Cloud OS", Max: 60, Category: "platform", Description: "Platform display name"},
 	{Key: "platform.organization", Type: "string", Default: "Informatika dan Teknik Komputer", Max: 120, Category: "platform", Description: "Organization name"},
 	{Key: "security.require_mfa_for_admins", Type: "bool", Default: true, Category: "security", Description: "Require MFA for roles marked as requiring MFA"},
 	{Key: "security.login_max_attempts", Type: "int", Default: 5, Min: 3, Max: 20, Category: "security", Description: "Failed logins before temporary lockout"},

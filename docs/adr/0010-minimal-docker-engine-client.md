@@ -33,11 +33,11 @@ the hardening profile reviewable.
 
 ### Consequences
 
-- Good: no SDK dependency; the full Docker surface used by ITK Cloud fits on a few pages.
+- Good: no SDK dependency; the full Docker surface used by Jenderal Cloud OS fits on a few pages.
 - Good: version negotiation keeps it working with current Docker releases (tested with Docker
   Engine 29.9, API 1.56).
 - Bad: new Docker features require code changes here; response structs only contain the
-  fields ITK Cloud reads.
+  fields Jenderal Cloud OS reads.
 - Bad: the hijacked exec stream is implemented by hand and needs care when Docker changes
   upgrade semantics.
 

@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: php-laravel
+# Jenderal Cloud OS workspace image: php-laravel
 FROM php:8.4-cli-bookworm
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

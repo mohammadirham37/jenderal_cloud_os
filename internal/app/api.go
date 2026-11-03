@@ -73,7 +73,7 @@ func NewAPIHandler(d *Deps, s *Services) http.Handler {
 	limiter := redisx.NewLimiter(d.Redis, "itk:rl")
 	roles := &rbac.Repo{Pool: d.Pool}
 
-	authH := &auth.Handler{Sessions: sessions, Settings: d.Settings, Limiter: limiter, Box: d.Box, Mail: d.Mail, BaseURL: d.Cfg.BaseURL, Issuer: "ITK Cloud"}
+	authH := &auth.Handler{Sessions: sessions, Settings: d.Settings, Limiter: limiter, Box: d.Box, Mail: d.Mail, BaseURL: d.Cfg.BaseURL, Issuer: "Jenderal Cloud OS"}
 	usersH := &users.Handler{Pool: d.Pool, Roles: roles, Sessions: sessions, Mail: d.Mail, BaseURL: d.Cfg.BaseURL, OnSuspend: workspaces.SuspendAllForUser}
 	rbacH := &rbac.Handler{Repo: roles}
 	auditH := &audit.Handler{Pool: d.Pool}

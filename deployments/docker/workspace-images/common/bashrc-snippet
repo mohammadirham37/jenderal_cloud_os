@@ -1,5 +1,5 @@
 
-# ITK Cloud workspace prompt
+# Jenderal Cloud OS workspace prompt
 if [ -n "$PS1" ]; then
   PS1='\[\e[1;32m\]\u@${ITK_WORKSPACE_NAME:-workspace}\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '
   alias ll='ls -alF'

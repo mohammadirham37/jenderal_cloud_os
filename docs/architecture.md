@@ -1,6 +1,6 @@
-# ITK Cloud architecture
+# Jenderal Cloud OS architecture
 
-ITK Cloud is a single-server private cloud for the Informatics & Computer Engineering
+Jenderal Cloud OS is a single-server private cloud for the Informatics & Computer Engineering
 laboratory. It runs **natively on Ubuntu Server 24.04 LTS** (systemd services, no container
 for the platform itself); Docker Engine is used only as the runtime for user container
 workspaces. This document describes the implemented architecture. Decisions are recorded in

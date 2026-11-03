@@ -9,7 +9,7 @@
 	});
 </script>
 
-<svelte:head><title>Session expired · ITK Cloud</title></svelte:head>
+<svelte:head><title>Session expired · Jenderal Cloud OS</title></svelte:head>
 
 <div class="text-center">
 	<div

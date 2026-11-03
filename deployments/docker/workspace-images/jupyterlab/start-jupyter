@@ -1,6 +1,6 @@
 #!/bin/sh
-# JupyterLab served behind the authenticated ITK Cloud app proxy.
-# ITK Cloud authorises the user (owner/editors only) and the app proxy adds
+# JupyterLab served behind the authenticated Jenderal Cloud OS app proxy.
+# Jenderal Cloud OS authorises the user (owner/editors only) and the app proxy adds
 # the per-container ITK_APP_TOKEN, so other processes that can reach the
 # loopback-published port cannot use the server without the token.
 BASE="${ITK_PROXY_BASE:-/}8888/"

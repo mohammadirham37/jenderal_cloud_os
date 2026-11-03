@@ -93,7 +93,7 @@ test('student uses the browser terminal and the file manager', async ({ page }) 
 
 	await page.goto(`/workspaces/${id}/files`);
 	await expect(page.getByText('catatan.txt')).toBeVisible({ timeout: 20_000 });
-	await page.locator('input[type="file"]').first().setInputFiles({ name: 'tugas.py', mimeType: 'text/x-python', buffer: Buffer.from('print("ITK Cloud")\n') });
+	await page.locator('input[type="file"]').first().setInputFiles({ name: 'tugas.py', mimeType: 'text/x-python', buffer: Buffer.from('print("Jenderal Cloud OS")\n') });
 	await expect(page.getByText('tugas.py')).toBeVisible({ timeout: 20_000 });
 	// fetch from the page (same origin, session cookie) to verify the download.
 	const text = await page.evaluate(async (wid) => (await fetch(`/api/v1/workspaces/${wid}/files/download?path=catatan.txt`)).text(), id);

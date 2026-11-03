@@ -1,21 +1,23 @@
-# ITK Cloud
+# Jenderal Cloud OS
 
-**Informatika dan Teknik Komputer Cloud Platform** — a private cloud for the Informatics &
-Computer Engineering laboratory.
+**A web-based cloud operating system** — every user gets their own desktop in the browser
+(windows, taskbar, start menu) backed by a private cloud: workspaces, terminals, files,
+databases and GPUs on your own server.
 
-> **Bahasa Indonesia.** ITK Cloud adalah platform *private cloud* berbasis web untuk
-> laboratorium Informatika dan Teknik Komputer. Dosen, mahasiswa, asisten, peneliti, dan
+> **Bahasa Indonesia.** Jenderal Cloud OS adalah *cloud OS* berbasis web: setiap pengguna
+> mendapat desktop sendiri di browser (jendela, taskbar, start menu) yang terhubung ke
+> *private cloud* di server sendiri. Dosen, mahasiswa, asisten, peneliti, dan
 > administrator memakai satu portal untuk membuat workspace (container atau Linux-native),
 > membuka terminal dan file manager di browser, mengelola project dan database, mengajukan
 > GPU, serta memantau penggunaan resource. Platform berjalan di satu server Ubuntu Server
-> 24.04 LTS di jaringan lokal (LAN), dipasang secara native (systemd); Docker hanya dipakai
-> sebagai runtime workspace pengguna.
+> 24.04/26.04 LTS (termasuk VPS kecil 1 GB RAM), dipasang secara native (systemd); Docker hanya
+> dipakai sebagai runtime workspace pengguna.
 >
-> **English.** ITK Cloud is a web-based private cloud for a university lab. Lecturers,
+> **English.** Jenderal Cloud OS is a web-based private cloud for a university lab. Lecturers,
 > students, assistants, researchers and administrators use one portal to create workspaces
 > (containers or Linux-native), use a browser terminal and file manager, manage projects and
-> databases, request GPUs and monitor resource usage. It runs on a single Ubuntu Server 24.04
-> LTS machine on the LAN, installed natively with systemd; Docker is used only as the runtime
+> databases, request GPUs and monitor resource usage. It runs on a single Ubuntu Server 24.04/26.04
+> LTS machine (including a small 1 GB RAM VPS), installed natively with systemd; Docker is used only as the runtime
 > for user workspaces.
 
 ## Features
@@ -86,7 +88,7 @@ Tests: `make test`, `make test-integration`, `go test ./tests/security/...`,
 `make test-web`, `make test-e2e`, `make openapi-lint` — see [docs/development.md](docs/development.md).
 
 Production: build a release with `make release` and run `sudo ./installer/install.sh` on
-Ubuntu Server 24.04 — see [docs/installation.md](docs/installation.md).
+Ubuntu Server 24.04 or 26.04 (`--small-server` is enabled automatically below 3 GB RAM) — see [docs/installation.md](docs/installation.md).
 
 ## Documentation
 

@@ -6,7 +6,10 @@
 	import { titleCase } from '#lib/format.ts';
 
 	const items = $derived.by(() => {
-		const segs = page.url.pathname.split('/').filter(Boolean).filter((s, i) => !(i === 0 && s === 'dashboard'));
+		const segs = page.url.pathname
+			.split('/')
+			.filter(Boolean)
+			.filter((s, i) => !(i === 0 && s === 'dashboard'));
 		const out = [{ href: '/dashboard', label: 'Home' }];
 		let acc = '';
 		for (const s of segs) {

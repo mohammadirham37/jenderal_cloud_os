@@ -97,7 +97,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) error {
 // PublicConfig handles GET /config (unauthenticated): non-sensitive UI
 // configuration.
 func (h *Handler) PublicConfig(w http.ResponseWriter, r *http.Request) error {
-	name := "ITK Cloud"
+	name := "Jenderal Cloud OS"
 	if h.PlatformName != nil {
 		name = h.PlatformName()
 	}

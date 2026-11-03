@@ -1,6 +1,6 @@
-# Operating ITK Cloud
+# Operating Jenderal Cloud OS
 
-Runbook for administrators of an installed ITK Cloud server: services and logs, monitoring
+Runbook for administrators of an installed Jenderal Cloud OS server: services and logs, monitoring
 and alerts, settings, common tasks, troubleshooting and capacity planning.
 
 Related: [installation](installation.md) · [backup & restore](backup-restore.md) ·
@@ -112,7 +112,7 @@ Values are type- and range-checked; every change is audited with old and new val
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `platform.name` | ITK Cloud | ≤ 60 chars | Display name |
+| `platform.name` | Jenderal Cloud OS | ≤ 60 chars | Display name |
 | `platform.organization` | Informatika dan Teknik Komputer | ≤ 120 chars | Organisation |
 | `security.require_mfa_for_admins` | true | bool | Enforce MFA for roles with `requires_mfa` |
 | `security.login_max_attempts` | 5 | 3–20 | Failed logins before lockout |

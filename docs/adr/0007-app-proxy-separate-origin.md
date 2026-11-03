@@ -7,7 +7,7 @@
 
 Users run web applications inside workspaces (JupyterLab, Vite/Laravel dev servers) and need
 to open them in the browser. These apps are untrusted code that serves HTML and JavaScript.
-If they were served from the console origin, their scripts could call the ITK Cloud API with
+If they were served from the console origin, their scripts could call the Jenderal Cloud OS API with
 the user's session cookie and read responses (including the CSRF token from `/auth/me`),
 fully compromising the account. Container ports must also never be reachable directly from
 the LAN.

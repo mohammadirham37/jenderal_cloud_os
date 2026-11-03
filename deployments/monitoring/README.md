@@ -1,6 +1,6 @@
 # Optional infrastructure monitoring
 
-ITK Cloud has built-in monitoring (host, workload and GPU metrics, alerts) in
+Jenderal Cloud OS has built-in monitoring (host, workload and GPU metrics, alerts) in
 the console. These files add Prometheus + Grafana for long-term
 infrastructure dashboards. They are installed with
 `installer/install.sh --with-monitoring`:

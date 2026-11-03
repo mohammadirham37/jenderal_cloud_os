@@ -1,4 +1,4 @@
-# Prometheus configuration for an ITK Cloud host (optional component).
+# Prometheus configuration for an Jenderal Cloud OS host (optional component).
 # Installed by installer/install.sh --with-monitoring. Prometheus listens on
 # 127.0.0.1:9090 only; Grafana reads it locally.
 global:

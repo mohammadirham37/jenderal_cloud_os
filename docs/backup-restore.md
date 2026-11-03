@@ -1,6 +1,6 @@
 # Backup and restore
 
-ITK Cloud backs up the platform database, configuration, workspace metadata, workspace files
+Jenderal Cloud OS backs up the platform database, configuration, workspace metadata, workspace files
 and project databases. **Every backup is encrypted with [age](https://age-encryption.org)**
 to a public key whose private half is kept **offline**; the platform refuses to create
 unencrypted backups ([ADR 0009](adr/0009-age-encrypted-backups.md)). Implementation:
@@ -247,7 +247,7 @@ hardware inventory and these docs.
 
 1. **Prepare the replacement server**: Ubuntu Server 24.04, same hostname/IP if possible
    (otherwise update DNS), NVIDIA driver if GPUs are used.
-2. **Install the same ITK Cloud version** with the installer and the **same domain**
+2. **Install the same Jenderal Cloud OS version** with the installer and the **same domain**
    (`sudo ./installer/install.sh --domain <same> …`). Skip creating real users — the restored
    database brings them back (a temporary admin is fine).
 3. **Stop the platform**: `sudo systemctl stop itk-cloud-web itk-cloud-worker itk-cloud-api`.

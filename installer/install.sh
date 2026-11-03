@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# ITK Cloud installer for Ubuntu Server 24.04 LTS.
+# Jenderal Cloud OS installer for Ubuntu Server 24.04 LTS.
 #
-# Installs ITK Cloud natively (systemd services; no Docker for the platform
+# Installs Jenderal Cloud OS natively (systemd services; no Docker for the platform
 # itself). Docker Engine is installed only as the runtime for user container
 # workspaces. Run from an extracted release directory:
 #
@@ -39,6 +39,9 @@ Options:
   --no-firewall            Do not configure UFW
   --images LIST            Workspace images to build: none | core (default: ubuntu-dev,python-dev) | all | comma list
   --node-tarball FILE      Use a local Node.js tarball (offline install) instead of downloading
+  --small-server           Tune for a small VPS (1-2 GB RAM): swap file, smaller PostgreSQL/Redis/
+                           connection pools, core images only. Enabled automatically below 3 GB RAM
+                           or 20 GB free disk.
   --non-interactive        Never prompt; fail when required values are missing
   --yes                    Answer yes to confirmations
   -h, --help               Show this help
@@ -62,6 +65,7 @@ IMAGES="core"
 NODE_TARBALL=""
 NON_INTERACTIVE=0
 ASSUME_YES=0
+SMALL=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -82,6 +86,7 @@ while [ $# -gt 0 ]; do
 	--no-firewall) CONFIGURE_FIREWALL=0; shift ;;
 	--images) IMAGES=$2; shift 2 ;;
 	--node-tarball) NODE_TARBALL=$2; shift 2 ;;
+	--small-server) SMALL=1; shift ;;
 	--non-interactive) NON_INTERACTIVE=1; shift ;;
 	--yes | -y) ASSUME_YES=1; shift ;;
 	-h | --help) usage; exit 0 ;;
@@ -95,7 +100,7 @@ trap 'die "Installation failed at line $LINENO. See $LOG_FILE."' ERR
 require_root
 touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
 ITK_VERSION="$(itk_version "$SRC")"
-log "ITK Cloud installer — version $ITK_VERSION"
+log "Jenderal Cloud OS installer — version $ITK_VERSION"
 
 # ---------------------------------------------------------------------------
 # 1. Preflight checks (stop on critical failures)
@@ -107,7 +112,8 @@ OS_ID="$(. /etc/os-release && echo "${ID:-}")"
 OS_VERSION_ID="$(. /etc/os-release && echo "${VERSION_ID:-}")"
 OS_PRETTY="$(. /etc/os-release && echo "${PRETTY_NAME:-unknown}")"
 OS_CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
-[ "$OS_ID" = "ubuntu" ] && [ "$OS_VERSION_ID" = "24.04" ] || die "Ubuntu Server 24.04 LTS is required (found $OS_PRETTY)."
+[ "$OS_ID" = "ubuntu" ] && { [ "$OS_VERSION_ID" = "24.04" ] || [ "$OS_VERSION_ID" = "26.04" ]; } ||
+	die "Ubuntu Server 24.04 LTS or 26.04 LTS is required (found $OS_PRETTY)."
 ok "OS: $OS_PRETTY"
 
 case "$(uname -m)" in
@@ -118,7 +124,7 @@ esac
 ok "Architecture: $ARCH"
 
 for f in bin/itk-cloud-api bin/itk-cloud-worker bin/itk-cloud-agent bin/itkctl web/build/index.js deployments/caddy/Caddyfile.tmpl; do
-	[ -e "$SRC/$f" ] || die "Release file missing: $f (run from an extracted ITK Cloud release; build one with 'make release')."
+	[ -e "$SRC/$f" ] || die "Release file missing: $f (run from an extracted Jenderal Cloud OS release; build one with 'make release')."
 done
 file_arch="$("$SRC/bin/itkctl" version 2>/dev/null || true)"
 [ -n "$file_arch" ] || die "bin/itkctl cannot run on this machine (wrong architecture?)."
@@ -126,15 +132,22 @@ file_arch="$("$SRC/bin/itkctl" version 2>/dev/null || true)"
 CPUS=$(nproc)
 MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
 MEM_GB=$((MEM_KB / 1024 / 1024))
-[ "$CPUS" -ge 2 ] || die "At least 2 CPU cores are required (found $CPUS)."
-[ "$MEM_GB" -ge 3 ] || die "At least 4 GB RAM is required (found ${MEM_GB} GB)."
-[ "$MEM_GB" -ge 8 ] || warn "Less than 8 GB RAM: only a few workspaces can run concurrently."
-ok "CPU: $CPUS cores, RAM: ${MEM_GB} GB"
-
+MEM_MB=$((MEM_KB / 1024))
 mkdir -p "$ITK_DATA"
 FREE_GB=$(df -BG --output=avail "$ITK_DATA" | tail -1 | tr -dc '0-9')
-[ "$FREE_GB" -ge 20 ] || die "At least 20 GB free disk space is required on $ITK_DATA (found ${FREE_GB} GB)."
-ok "Free disk on $ITK_DATA: ${FREE_GB} GB"
+if [ "$SMALL" = 0 ] && { [ "$MEM_MB" -lt 3000 ] || [ "$FREE_GB" -lt 20 ]; }; then
+	SMALL=1
+	warn "Small server detected (${MEM_MB} MB RAM, ${FREE_GB} GB free disk): enabling small-server mode."
+fi
+if [ "$SMALL" = 1 ]; then
+	[ "$MEM_MB" -ge 900 ] || die "At least 1 GB RAM is required (found ${MEM_MB} MB)."
+	[ "$FREE_GB" -ge 10 ] || die "At least 10 GB free disk space is required on $ITK_DATA (found ${FREE_GB} GB)."
+	warn "Small-server mode: suitable for trials and a few light workspaces (use 0.5 GB memory per workspace)."
+else
+	[ "$CPUS" -ge 2 ] || die "At least 2 CPU cores are required (found $CPUS)."
+	[ "$MEM_GB" -ge 8 ] || warn "Less than 8 GB RAM: only a few workspaces can run concurrently."
+fi
+ok "CPU: $CPUS cores, RAM: ${MEM_MB} MB, free disk on $ITK_DATA: ${FREE_GB} GB"
 
 for p in 443 "$PROXY_PORT"; do
 	if ss -ltnH "sport = :$p" | grep -q . && ! ss -ltnpH "sport = :$p" | grep -q caddy; then
@@ -176,14 +189,28 @@ cat <<EOF
   Native workspaces:  $([ "$ENABLE_NATIVE" = 1 ] && echo enabled || echo disabled)
   Project databases:  $([ "$PROJECT_DBS" = 1 ] && echo enabled || echo disabled)
   Monitoring stack:   $([ "$WITH_MONITORING" = 1 ] && echo yes || echo no)
+  Small-server mode:  $([ "$SMALL" = 1 ] && echo "yes (swap, reduced memory settings)" || echo no)
   Firewall (UFW):     $([ "$CONFIGURE_FIREWALL" = 1 ] && echo configure || echo skip)
 EOF
 confirm "Proceed with installation?" || die "Aborted by user."
+
+if [ "$SMALL" = 1 ]; then
+	[ "$WITH_MONITORING" = 1 ] && warn "Monitoring stack disabled in small-server mode." && WITH_MONITORING=0
+	[ "$IMAGES" = core ] && IMAGES=ubuntu-dev
+fi
 
 # ---------------------------------------------------------------------------
 # 2. Packages
 # ---------------------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
+if [ "$SMALL" = 1 ] && [ -z "$(swapon --noheadings --show=NAME)" ]; then
+	log "Creating a 2 GB swap file (small-server mode)"
+	fallocate -l 2G /swapfile.itk-cloud && chmod 600 /swapfile.itk-cloud
+	mkswap -q /swapfile.itk-cloud && swapon /swapfile.itk-cloud
+	grep -q '^/swapfile.itk-cloud ' /etc/fstab || echo '/swapfile.itk-cloud none swap sw 0 0' >>/etc/fstab
+	sysctl -q -w vm.swappiness=20 && echo 'vm.swappiness=20' >/etc/sysctl.d/90-itk-cloud.conf
+	ok "Swap enabled"
+fi
 log "Installing system packages"
 apt-get update -qq
 apt-get install -y -qq ca-certificates curl gnupg jq uuid-runtime e2fsprogs util-linux acl ufw \
@@ -266,7 +293,7 @@ ok "User $ITK_USER, group $ITK_WS_GROUP, data in $ITK_DATA"
 # ---------------------------------------------------------------------------
 # 4. Install release files
 # ---------------------------------------------------------------------------
-log "Installing ITK Cloud $ITK_VERSION"
+log "Installing Jenderal Cloud OS $ITK_VERSION"
 REL="$ITK_PREFIX/releases/$ITK_VERSION"
 rm -rf "$REL.tmp" && mkdir -p "$REL.tmp"
 cp -a "$SRC/bin" "$SRC/web" "$SRC/deployments" "$SRC/installer" "$REL.tmp/"
@@ -279,7 +306,7 @@ ln -sfn "$ITK_PREFIX/current/docs" "$ITK_PREFIX/docs" 2>/dev/null || true
 rm -f /usr/local/bin/itkctl
 cat >/usr/local/bin/itkctl <<'WRAPPER'
 #!/bin/sh
-# itkctl wrapper: loads the ITK Cloud configuration (root only).
+# itkctl wrapper: loads the Jenderal Cloud OS configuration (root only).
 set -a
 . /etc/itk-cloud/itk-cloud.env
 set +a
@@ -313,7 +340,9 @@ sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='itk_cloud'"
 	sudo -u postgres createdb -O itk_cloud -E UTF8 itk_cloud
 sudo -u postgres psql -q -d itk_cloud -c "CREATE EXTENSION IF NOT EXISTS pgcrypto" >/dev/null
 env_set "$ENV_FILE" ITK_DB_PASSWORD "$DB_PASS"
-env_set "$ENV_FILE" DATABASE_URL "postgres://itk_cloud:$DB_PASS@127.0.0.1:5432/itk_cloud?sslmode=disable"
+POOL=""
+[ "$SMALL" = 1 ] && POOL="&pool_max_conns=8"
+env_set "$ENV_FILE" DATABASE_URL "postgres://itk_cloud:$DB_PASS@127.0.0.1:5432/itk_cloud?sslmode=disable$POOL"
 
 if [ "$PROJECT_DBS" = 1 ]; then
 	PDB_PASS="$(env_get "$ENV_FILE" ITK_PROJECT_DB_PASSWORD)"
@@ -344,6 +373,17 @@ EOF
 	env_set "$ENV_FILE" PROJECT_DB_HOST "host.docker.internal"
 	env_set "$ENV_FILE" PROJECT_DB_PORT "5432"
 fi
+if [ "$SMALL" = 1 ]; then
+	mkdir -p "$PG_CONF_DIR/conf.d"
+	cat >"$PG_CONF_DIR/conf.d/90-itk-cloud-small.conf" <<'EOF'
+# Jenderal Cloud OS small-server tuning
+shared_buffers = 64MB
+work_mem = 2MB
+maintenance_work_mem = 32MB
+effective_cache_size = 256MB
+max_connections = 60
+EOF
+fi
 systemctl restart postgresql
 ok "PostgreSQL $PG_VER configured (database itk_cloud)"
 
@@ -352,6 +392,7 @@ REDIS_PASS="$(env_get "$ENV_FILE" ITK_REDIS_PASSWORD)"
 [ -n "$REDIS_PASS" ] || REDIS_PASS="$(random_password 40)"
 install -m 0640 -o redis -g redis "$SRC/deployments/config/redis-itk-cloud.conf" /etc/redis/itk-cloud.conf
 printf 'requirepass %s\n' "$REDIS_PASS" >>/etc/redis/itk-cloud.conf
+[ "$SMALL" = 1 ] && sed -i 's/^maxmemory .*/maxmemory 96mb/' /etc/redis/itk-cloud.conf
 grep -q '^include /etc/redis/itk-cloud.conf' /etc/redis/redis.conf || echo 'include /etc/redis/itk-cloud.conf' >>/etc/redis/redis.conf
 systemctl enable --now redis-server >/dev/null && systemctl restart redis-server
 env_set "$ENV_FILE" ITK_REDIS_PASSWORD "$REDIS_PASS"
@@ -418,6 +459,7 @@ ORIGIN=$BASE_URL
 NODE_ENV=production
 BODY_SIZE_LIMIT=1M
 EOF
+[ "$SMALL" = 1 ] && echo "NODE_OPTIONS=--max-old-space-size=160" >>"$ITK_ETC/web.env"
 chown root:"$ITK_USER" "$ITK_ETC/web.env" && chmod 0640 "$ITK_ETC/web.env"
 umask 022
 ok "Configuration in $ITK_ETC (secrets generated, permissions 0640/0600)"
@@ -543,7 +585,7 @@ if [ "${HAS_ADMIN:-0}" = 0 ]; then
 	log "Creating the first super administrator"
 	ask ADMIN_USER "Administrator username" "admin"
 	ask ADMIN_EMAIL "Administrator email" ""
-	ask ADMIN_NAME "Administrator full name" "ITK Cloud Administrator"
+	ask ADMIN_NAME "Administrator full name" "Jenderal Cloud OS Administrator"
 	GENERATED_PW=0
 	if [ -z "${ITK_ADMIN_PASSWORD:-}" ]; then
 		if [ "$NON_INTERACTIVE" = 1 ]; then
@@ -577,7 +619,7 @@ echo "$ITK_VERSION" >"$ITK_STATE/installed-version"
 
 cat <<EOF
 
-${C_BLD}${C_GRN}ITK Cloud $ITK_VERSION is installed.${C_RST}
+${C_BLD}${C_GRN}Jenderal Cloud OS $ITK_VERSION is installed.${C_RST}
 
   Console:            $BASE_URL
   Workspace apps:     $PROXY_ORIGIN

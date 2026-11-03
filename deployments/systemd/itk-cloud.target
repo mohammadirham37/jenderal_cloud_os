@@ -1,5 +1,5 @@
 [Unit]
-Description=ITK Cloud (all services)
+Description=Jenderal Cloud OS (all services)
 Wants=itk-cloud-agent.service itk-cloud-api.service itk-cloud-worker.service itk-cloud-web.service
 
 [Install]

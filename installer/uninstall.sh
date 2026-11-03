@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Remove ITK Cloud services and binaries.
+# Remove Jenderal Cloud OS services and binaries.
 #
 #   sudo ./installer/uninstall.sh                  # keep data, config and backups
 #   sudo ./installer/uninstall.sh --purge          # also delete workspaces, database and config
 #   sudo ./installer/uninstall.sh --purge --purge-backups   # ...and backups
 #
 # PostgreSQL, Redis, Docker and Caddy packages are left installed. Workspace
-# containers managed by ITK Cloud are stopped and removed only with --purge.
+# containers managed by Jenderal Cloud OS are stopped and removed only with --purge.
 set -Eeuo pipefail
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=installer/lib.sh
@@ -34,7 +34,7 @@ if [ "$PURGE" = 1 ]; then
 		[ "$ans" = "DELETE EVERYTHING" ] || die "Aborted."
 	fi
 fi
-confirm "Remove ITK Cloud services and binaries?" || exit 0
+confirm "Remove Jenderal Cloud OS services and binaries?" || exit 0
 
 log "Stopping and disabling services"
 for s in "${SERVICES_STOP_ORDER[@]}"; do systemctl disable --now "$s" >/dev/null 2>&1 || true; done
@@ -43,9 +43,9 @@ rm -f /etc/systemd/system/itk-cloud-{api,worker,agent,web}.service /etc/systemd/
 rm -rf /etc/systemd/system/itk-cloud-agent.service.d
 systemctl daemon-reload
 rm -f /usr/local/bin/itkctl
-if grep -q "ITK Cloud reverse proxy" /etc/caddy/Caddyfile 2>/dev/null; then
+if grep -q "Jenderal Cloud OS reverse proxy" /etc/caddy/Caddyfile 2>/dev/null; then
 	mv /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.itk-cloud.$(date +%s).bak"
-	printf '# ITK Cloud was uninstalled.\n' >/etc/caddy/Caddyfile
+	printf '# Jenderal Cloud OS was uninstalled.\n' >/etc/caddy/Caddyfile
 	systemctl reload caddy || true
 fi
 ok "Services removed"
@@ -73,9 +73,9 @@ if [ "$PURGE" = 1 ]; then
 	if [ "$PURGE_BACKUPS" = 1 ]; then rm -rf "$ITK_DATA/backups"; else warn "Backups kept in $ITK_DATA/backups"; fi
 	userdel "$ITK_USER" 2>/dev/null || true
 	groupdel "$ITK_WS_GROUP" 2>/dev/null || true
-	ok "All ITK Cloud data removed"
+	ok "All Jenderal Cloud OS data removed"
 else
 	warn "Data kept: $ITK_DATA, $ITK_ETC and the itk_cloud database. Re-run with --purge to delete them."
 fi
 rm -rf "$ITK_PREFIX"
-ok "ITK Cloud uninstalled"
+ok "Jenderal Cloud OS uninstalled"

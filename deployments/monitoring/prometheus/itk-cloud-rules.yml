@@ -1,4 +1,4 @@
-# Infrastructure alert rules. The ITK Cloud worker evaluates its own
+# Infrastructure alert rules. The Jenderal Cloud OS worker evaluates its own
 # application-level alerts (agent offline, backups, job queue) and shows them
 # in the console; these rules cover the host itself.
 groups:

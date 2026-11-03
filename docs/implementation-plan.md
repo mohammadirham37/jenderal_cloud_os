@@ -1,4 +1,4 @@
-# ITK Cloud implementation plan and status
+# Jenderal Cloud OS implementation plan and status
 
 This plan breaks the specification (`ITK-CLOUD-SPEC.md` §23) into phases with tasks,
 dependencies and acceptance criteria, and records the **actual, verified status** as of

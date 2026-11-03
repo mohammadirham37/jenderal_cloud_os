@@ -1,5 +1,5 @@
 // Package agentproto defines the versioned request/response protocol between
-// the ITK Cloud API/worker and the privileged host agent (itk-cloud-agent).
+// the Jenderal Cloud OS API/worker and the privileged host agent (itk-cloud-agent).
 //
 // Transport: HTTP/1.1 over a Unix domain socket with strict filesystem
 // permissions. Every request is authenticated with an HMAC-SHA256 signature
@@ -298,7 +298,7 @@ type PortSpec struct {
 // ContainerCreate creates a hardened workspace container.
 type ContainerCreate struct {
 	WorkspaceID  string            `json:"workspace_id"`
-	ContainerID  string            `json:"container_id"` // ITK Cloud container UUID
+	ContainerID  string            `json:"container_id"` // Jenderal Cloud OS container UUID
 	OwnerID      string            `json:"owner_id"`
 	Name         string            `json:"name"`
 	Image        string            `json:"image"`
@@ -359,7 +359,7 @@ func (c *ContainerCreate) Validate() error {
 
 // ContainerRef identifies a managed container.
 type ContainerRef struct {
-	ContainerID string `json:"container_id"` // ITK Cloud container UUID
+	ContainerID string `json:"container_id"` // Jenderal Cloud OS container UUID
 	RuntimeID   string `json:"runtime_id"`
 	TimeoutSec  int    `json:"timeout_sec,omitempty"`
 }

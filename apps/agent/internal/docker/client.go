@@ -1,6 +1,6 @@
 // Package docker is a minimal Docker Engine API client used by the host
 // agent. It speaks the versioned REST API over the local Unix socket and
-// implements only the calls ITK Cloud needs.
+// implements only the calls Jenderal Cloud OS needs.
 package docker
 
 import (

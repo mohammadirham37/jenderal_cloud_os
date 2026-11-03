@@ -1,6 +1,6 @@
 # API ↔ host agent protocol (agentproto v1)
 
-`itk-cloud-agent` is the only privileged component of ITK Cloud. The API and the worker talk
+`itk-cloud-agent` is the only privileged component of Jenderal Cloud OS. The API and the worker talk
 to it through the versioned protocol defined in [`packages/agentproto`](../packages/agentproto)
 (shared by both sides). This document specifies that protocol. Rationale:
 [ADR 0003](adr/0003-host-agent-unix-socket-hmac.md). Security context: [security.md §4.9](security.md#49-host-agent).
@@ -151,7 +151,7 @@ GPU UUIDs `^(GPU|MIG)-[0-9a-fA-F-]{8,64}$`; env keys `^[A-Z_][A-Z0-9_]{0,63}$`; 
 
 Every operation that takes a `ContainerRef` resolves the Docker container and verifies the
 labels `itk.managed=true` and `itk.container_id=<container_id>`; otherwise it fails with
-`forbidden` ("container is not managed by ITK Cloud").
+`forbidden` ("container is not managed by Jenderal Cloud OS").
 
 ### 5.4 Files (confined with `os.Root` to `WORKSPACE_ROOT/<id>/data`)
 

@@ -309,11 +309,11 @@ func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) error {
 				return err
 			}
 			link := h.BaseURL + "/reset-password#token=" + token
-			body := fmt.Sprintf("Halo %s,\n\nGunakan tautan berikut untuk mengatur ulang kata sandi ITK Cloud Anda (berlaku 1 jam):\n\n%s\n\nAbaikan email ini jika Anda tidak memintanya.\n", fullName, link)
+			body := fmt.Sprintf("Halo %s,\n\nGunakan tautan berikut untuk mengatur ulang kata sandi Jenderal Cloud OS Anda (berlaku 1 jam):\n\n%s\n\nAbaikan email ini jika Anda tidak memintanya.\n", fullName, link)
 			go func() {
 				sctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
-				if err := h.Mail.Send(sctx, email, "ITK Cloud - Reset kata sandi", body); err != nil {
+				if err := h.Mail.Send(sctx, email, "Jenderal Cloud OS - Reset kata sandi", body); err != nil {
 					logging.From(ctx).Error("send reset email failed", "error", err)
 				}
 			}()

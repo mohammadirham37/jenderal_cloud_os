@@ -187,7 +187,7 @@
 				<button
 					class="flex size-8 items-center justify-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
 					onclick={() => wm.toggleMaximize(win.id)}
-					aria-label={win.snap === 'max' ? 'Restore' : 'Maximize'}
+					aria-label="{win.snap === 'max' ? 'Restore' : 'Maximize'} {win.title}"
 				>
 					{#if win.snap === 'max'}<Copy class="size-3.5" />{:else}<Square class="size-3.5" />{/if}
 				</button>

@@ -1,6 +1,6 @@
-# Installing ITK Cloud on Ubuntu Server 24.04 LTS
+# Installing Jenderal Cloud OS on Ubuntu Server 24.04 LTS
 
-ITK Cloud is installed **natively**: the API, worker, host agent and web console run as
+Jenderal Cloud OS is installed **natively**: the API, worker, host agent and web console run as
 systemd services on the host, with PostgreSQL, Redis and Caddy from apt. Docker Engine is
 installed only as the runtime for **user container workspaces**; the platform itself does not
 run in containers ([ADR 0004](adr/0004-native-install-no-docker-for-platform.md)).
@@ -363,7 +363,7 @@ sudo ./installer/upgrade.sh            # --yes to skip prompts, --skip-backup (n
 
 `installer/upgrade.sh`:
 
-1. Checks that ITK Cloud is installed (`/opt/itk-cloud/current`), compares the installed and
+1. Checks that Jenderal Cloud OS is installed (`/opt/itk-cloud/current`), compares the installed and
    target versions (warns on downgrade) and verifies the release files.
 2. Creates **pre-upgrade backups** synchronously: `itkctl backup run --kind platform_db
    --trigger pre_upgrade` (aborts the upgrade if it fails) and the `config` backup.

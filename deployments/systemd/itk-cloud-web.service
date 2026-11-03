@@ -1,5 +1,5 @@
 [Unit]
-Description=ITK Cloud web console (SvelteKit)
+Description=Jenderal Cloud OS web console (SvelteKit)
 Documentation=file:///opt/itk-cloud/docs/operations.md
 After=network-online.target itk-cloud-api.service
 Wants=network-online.target

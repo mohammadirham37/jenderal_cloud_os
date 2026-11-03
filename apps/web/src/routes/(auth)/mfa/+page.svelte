@@ -40,7 +40,7 @@
 	}
 </script>
 
-<svelte:head><title>Two-factor authentication · ITK Cloud</title></svelte:head>
+<svelte:head><title>Two-factor authentication · Jenderal Cloud OS</title></svelte:head>
 
 <h1 class="text-xl font-semibold">Two-factor authentication</h1>
 <p class="mt-1 text-sm text-fg-muted">

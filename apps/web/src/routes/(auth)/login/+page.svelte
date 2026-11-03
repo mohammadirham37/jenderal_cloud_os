@@ -46,7 +46,7 @@
 	}
 </script>
 
-<svelte:head><title>Sign in · ITK Cloud</title></svelte:head>
+<svelte:head><title>Sign in · Jenderal Cloud OS</title></svelte:head>
 
 <h1 class="text-xl font-semibold">Sign in</h1>
 <p class="mt-1 text-sm text-fg-muted">Use your laboratory account.</p>

@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // Browser end-to-end tests live in tests/e2e at the repository root. They
-// run against a running ITK Cloud stack (agent + API + worker + web), e.g.
+// run against a running Jenderal Cloud OS stack (agent + API + worker + web), e.g.
 // the local development stack (`make dev-agent dev-api dev-worker dev-web`).
 // Set E2E_BASE_URL to target another deployment.
 export default defineConfig({

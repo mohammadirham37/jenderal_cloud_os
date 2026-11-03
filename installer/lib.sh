@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for the ITK Cloud installer scripts. Sourced, not executed.
+# Shared helpers for the Jenderal Cloud OS installer scripts. Sourced, not executed.
 # shellcheck disable=SC2034  # variables are used by the scripts that source this file
 
 ITK_PREFIX="${ITK_PREFIX:-/opt/itk-cloud}"

@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: node-dev
+# Jenderal Cloud OS workspace image: node-dev
 FROM node:24-bookworm
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

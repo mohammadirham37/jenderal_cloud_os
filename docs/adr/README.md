@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Significant architecture decisions of ITK Cloud, written in the
+Significant architecture decisions of Jenderal Cloud OS, written in the
 [MADR](https://adr.github.io/madr/) format. Each record states the context, the options that
 were considered, the decision and its consequences. Records are immutable once accepted; a
 changed decision gets a new record that supersedes the old one.

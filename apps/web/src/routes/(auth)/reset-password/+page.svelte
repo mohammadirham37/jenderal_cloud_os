@@ -40,7 +40,7 @@
 	}
 </script>
 
-<svelte:head><title>Choose a new password · ITK Cloud</title></svelte:head>
+<svelte:head><title>Choose a new password · Jenderal Cloud OS</title></svelte:head>
 
 <h1 class="text-xl font-semibold">Choose a new password</h1>
 {#if done}

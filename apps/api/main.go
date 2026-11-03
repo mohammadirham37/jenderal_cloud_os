@@ -1,4 +1,4 @@
-// Command itk-cloud-api serves the ITK Cloud REST API (/api/v1) and the
+// Command itk-cloud-api serves the Jenderal Cloud OS REST API (/api/v1) and the
 // terminal WebSocket relay. It never runs as root and never talks to Docker
 // directly; host operations go through itk-cloud-agent.
 package main

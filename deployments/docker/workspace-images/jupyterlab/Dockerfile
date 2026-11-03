@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: jupyterlab
+# Jenderal Cloud OS workspace image: jupyterlab
 FROM python:3.13-bookworm
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

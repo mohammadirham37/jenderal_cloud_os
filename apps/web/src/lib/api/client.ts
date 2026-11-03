@@ -1,4 +1,4 @@
-// Typed client for the ITK Cloud REST API (/api/v1).
+// Typed client for the Jenderal Cloud OS REST API (/api/v1).
 // - Sends the per-session CSRF token on state-changing requests.
 // - Normalises errors into ApiError (never exposes raw server internals).
 // - Redirects to login / MFA / password change when the server requires it.
@@ -101,7 +101,7 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
 		if ((e as Error).name === 'AbortError') throw e;
 		throw new ApiError(0, {
 			code: 'network_error',
-			message: 'Cannot reach the ITK Cloud server. Check your connection.'
+			message: 'Cannot reach the Jenderal Cloud OS server. Check your connection.'
 		});
 	}
 	if (res.status === 204) return undefined as T;

@@ -30,12 +30,12 @@
 			<div class="mb-10 flex items-center gap-3 lg:mb-16">
 				<span
 					class="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-signal to-[#c2410c] font-display text-base font-bold shadow-[0_0_28px_-4px_rgba(255,122,26,0.7)]"
-					>IT</span
+					>JC</span
 				>
 				<div class="leading-tight">
 					<p class="font-display text-lg font-semibold tracking-wide">{appConfig.name}</p>
 					<p class="font-mono text-[11px] tracking-[0.18em] text-white/50 uppercase">
-						Informatika · Teknik Komputer
+						Cloud OS · Laboratorium
 					</p>
 				</div>
 			</div>

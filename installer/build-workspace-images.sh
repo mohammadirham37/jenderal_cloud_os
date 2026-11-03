@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the ITK Cloud workspace images on this server.
+# Build the Jenderal Cloud OS workspace images on this server.
 # Usage: sudo installer/build-workspace-images.sh [image ...]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

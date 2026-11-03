@@ -17,16 +17,28 @@
 	// Inside a desktop window the page renders without the classic chrome.
 	const embedded = isEmbedded();
 
+	function reportTitle() {
+		const raw = document.title;
+		// Only page-specific titles ("Users · Jenderal Cloud OS"); the bare app name
+		// would overwrite the window's own title.
+		if (!/·\s*Jenderal Cloud OS$/.test(raw)) return;
+		postToShell({
+			type: 'itk:nav',
+			title: raw.replace(/\s*·\s*Jenderal Cloud OS$/, ''),
+			path: location.pathname + location.search
+		});
+	}
+
 	afterNavigate(() => {
+		if (embedded) requestAnimationFrame(reportTitle);
+	});
+
+	$effect(() => {
 		if (!embedded) return;
-		// Let SvelteKit update <title> first, then report it to the shell.
-		requestAnimationFrame(() =>
-			postToShell({
-				type: 'itk:nav',
-				title: document.title.replace(/\s*·\s*ITK Cloud$/, ''),
-				path: location.pathname + location.search
-			})
-		);
+		// Pages set <title> through <svelte:head> after navigation completes.
+		const obs = new MutationObserver(reportTitle);
+		obs.observe(document.head, { subtree: true, childList: true, characterData: true });
+		return () => obs.disconnect();
 	});
 
 	onMount(() => {

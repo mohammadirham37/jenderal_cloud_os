@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: ubuntu-dev
+# Jenderal Cloud OS workspace image: ubuntu-dev
 FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

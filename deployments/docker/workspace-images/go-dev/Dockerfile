@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: go-dev
+# Jenderal Cloud OS workspace image: go-dev
 FROM golang:1.27-bookworm
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

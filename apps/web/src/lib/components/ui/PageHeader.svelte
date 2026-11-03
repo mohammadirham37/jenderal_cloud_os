@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { appConfig } from '#lib/stores/config.svelte.ts';
 
 	let {
 		title,
@@ -9,7 +10,7 @@
 	}: { title: string; description?: string; actions?: Snippet; meta?: Snippet } = $props();
 </script>
 
-<svelte:head><title>{title} · ITK Cloud</title></svelte:head>
+<svelte:head><title>{title} · {appConfig.name}</title></svelte:head>
 
 <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
 	<div class="min-w-0">

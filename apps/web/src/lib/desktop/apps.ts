@@ -1,4 +1,4 @@
-// Application registry of the ITK Cloud desktop. Each app is an existing
+// Application registry of the Jenderal Cloud OS desktop. Each app is an existing
 // console route rendered inside a window (same-origin iframe in embedded
 // mode). Visibility follows the same permissions as the classic navigation.
 import {

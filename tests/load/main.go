@@ -1,4 +1,4 @@
-// Command load is a basic load test for the ITK Cloud API: it logs in once
+// Command load is a basic load test for the Jenderal Cloud OS API: it logs in once
 // and then runs concurrent authenticated read requests against the most
 // frequently polled endpoints, reporting throughput, latency percentiles and
 // errors. It never creates workloads.

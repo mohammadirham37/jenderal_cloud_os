@@ -1,6 +1,6 @@
 # GPU management
 
-ITK Cloud manages NVIDIA GPUs through one module (`internal/modules/gpu`) and the agent's
+Jenderal Cloud OS manages NVIDIA GPUs through one module (`internal/modules/gpu`) and the agent's
 `gpu.inventory` operation (`apps/agent/internal/gpu`). Users request access for a container
 workspace, approvers allocate a specific GPU for a limited time, and the allocation is
 attached to the workspace's primary container. The platform never pretends to partition GPU
@@ -145,7 +145,7 @@ reconcile run. Deleting a workspace releases its allocations and cancels pending
 
 ## 8. Setting up NVIDIA on Ubuntu 24.04
 
-1. **Driver** (before installing ITK Cloud):
+1. **Driver** (before installing Jenderal Cloud OS):
    ```bash
    sudo ubuntu-drivers list                 # recommended driver packages
    sudo ubuntu-drivers install              # or: sudo apt install nvidia-driver-<version>-server
@@ -164,7 +164,7 @@ reconcile run. Deleting a workspace releases its allocations and cancels pending
    sudo systemctl restart docker
    sudo docker run --rm --gpus all ubuntu:24.04 nvidia-smi    # sanity check
    ```
-3. **Enable in ITK Cloud**: set `GPU_ENABLED=true` in `/etc/itk-cloud/itk-cloud.env`, then
+3. **Enable in Jenderal Cloud OS**: set `GPU_ENABLED=true` in `/etc/itk-cloud/itk-cloud.env`, then
    `sudo systemctl restart itk-cloud-api itk-cloud-worker`.
 4. **Build the CUDA image**: `sudo installer/build-workspace-images.sh ml-cuda`
    (base `nvidia/cuda:12.9.2-cudnn-runtime-ubuntu24.04`; the host driver must support CUDA 12.9 —

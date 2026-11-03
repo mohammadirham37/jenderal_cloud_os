@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: python-datascience
+# Jenderal Cloud OS workspace image: python-datascience
 FROM python:3.13-bookworm
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

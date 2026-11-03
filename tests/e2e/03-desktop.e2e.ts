@@ -60,11 +60,12 @@ test('desktop shell opens apps in windows and restores the layout', async ({ pag
 	await expect(users).not.toHaveAttribute('aria-hidden', 'true');
 
 	// Maximize and close.
-	await page.getByRole('button', { name: 'Maximize' }).last().click();
+	await page.getByRole('button', { name: 'Maximize Users' }).click();
 	await page.getByRole('button', { name: 'Close Users' }).click();
 	await expect(users).toHaveCount(0);
 
 	// Cross-app link inside a window opens in the owning app's window.
+	await page.keyboard.press('Control+Alt+d'); // show desktop (icons are behind windows)
 	await page.getByRole('button', { name: 'Open Overview' }).dblclick();
 	const overview = page.frameLocator('iframe[name^="itk-win:dashboard"]');
 	await overview.getByRole('link', { name: 'View all' }).click();
@@ -77,11 +78,10 @@ test('desktop shell opens apps in windows and restores the layout', async ({ pag
 	await expect(page.locator('[data-window="containers"]')).toBeVisible();
 
 	// Right-click on the wallpaper → change wallpaper.
+	await page.keyboard.press('Control+Alt+d');
 	await page.mouse.click(700, 450, { button: 'right' });
 	await page.getByRole('menuitem', { name: 'Wallpaper Fajar' }).click();
-	await page.getByRole('button', { name: 'Minimize Terminal' }).click();
-	await page.keyboard.press('Control+Alt+d');
-	await page.waitForTimeout(500);
+	await page.waitForTimeout(800);
 	await page.screenshot({ path: 'test-results/screens/desktop-4-fajar.png' });
 	expect(problems, problems.join('\n')).toEqual([]);
 });

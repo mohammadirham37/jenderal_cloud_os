@@ -1,6 +1,6 @@
-# ITK Cloud API guide
+# Jenderal Cloud OS API guide
 
-This is the human-oriented guide to the ITK Cloud REST API. The machine-readable contract is
+This is the human-oriented guide to the Jenderal Cloud OS REST API. The machine-readable contract is
 [`packages/api-contracts/openapi.yaml`](../packages/api-contracts/openapi.yaml) (OpenAPI 3.1,
 validated with Redocly). The Go handlers in `internal/modules/**` and the route table in
 [`internal/app/api.go`](../internal/app/api.go) are the source of truth.

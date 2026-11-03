@@ -5,9 +5,9 @@
 
 ## Context and problem statement
 
-ITK Cloud targets one Ubuntu Server 24.04 machine managed with systemd (spec §4.1, §21). The
+Jenderal Cloud OS targets one Ubuntu Server 24.04 machine managed with systemd (spec §4.1, §21). The
 platform could be shipped as containers (Docker Compose) or installed natively. The lab
-decided (user decision) that **ITK Cloud itself is installed natively** and that **Docker is
+decided (user decision) that **Jenderal Cloud OS itself is installed natively** and that **Docker is
 used only as the runtime for user container workspaces**.
 
 ## Decision drivers

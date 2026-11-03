@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: ml-cuda
+# Jenderal Cloud OS workspace image: ml-cuda
 FROM nvidia/cuda:12.9.2-cudnn-runtime-ubuntu24.04
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: ITK Cloud API
+  title: Jenderal Cloud OS API
   version: 1.0.0
-  summary: REST API of ITK Cloud, the private cloud platform of the Informatics & Computer Engineering laboratory.
+  summary: REST API of Jenderal Cloud OS, the private cloud platform of the Informatics & Computer Engineering laboratory.
   description: |
     Contract for every route registered in `internal/app/api.go`. The Go handlers in
     `internal/modules/**` are the source of truth; this document is derived from their
@@ -34,7 +34,7 @@ info:
 
     See docs/api.md for the human-oriented guide (permissions per endpoint, rate limits).
   contact:
-    name: ITK Cloud administrators
+    name: Jenderal Cloud OS administrators
   license:
     name: Proprietary – internal use
     identifier: LicenseRef-ITK-Cloud-Proprietary

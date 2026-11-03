@@ -1,4 +1,4 @@
-// Command itk-cloud-agent is the privileged host agent of ITK Cloud. It
+// Command itk-cloud-agent is the privileged host agent of Jenderal Cloud OS. It
 // listens on a Unix domain socket and executes only the allow-listed,
 // schema-validated operations defined in packages/agentproto.
 package main

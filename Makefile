@@ -1,4 +1,4 @@
-# ITK Cloud — developer and release tasks.
+# Jenderal Cloud OS — developer and release tasks.
 SHELL := /bin/bash
 VERSION ?= $(shell cat VERSION 2>/dev/null || echo 0.0.0-dev)
 GOARCHS ?= amd64
@@ -58,9 +58,9 @@ test-e2e: ## Browser end-to-end tests (Playwright; needs a running stack)
 load-test: ## Basic API load test (LOAD_USER/LOAD_PASSWORD of an account without MFA; LOAD_BASE)
 	go run ./tests/load -base $${LOAD_BASE:-http://127.0.0.1:8080} -user "$$LOAD_USER" -password "$$LOAD_PASSWORD" -c 50 -d 30s
 
-shellcheck: ## Lint installer scripts (uses the shellcheck container if not installed)
-	@if command -v shellcheck >/dev/null; then shellcheck -S warning -x installer/*.sh; \
-	else docker run --rm -v "$$PWD:/mnt" -w /mnt koalaman/shellcheck:stable -S warning -x installer/*.sh; fi
+shellcheck: ## Lint installer scripts (requires shellcheck: apt install shellcheck / brew install shellcheck)
+	@command -v shellcheck >/dev/null || (echo "shellcheck not installed (apt install shellcheck)"; exit 1)
+	shellcheck -S warning -x installer/*.sh
 
 openapi-lint: ## Validate the OpenAPI contract
 	npx --yes @redocly/cli@latest lint packages/api-contracts/openapi.yaml

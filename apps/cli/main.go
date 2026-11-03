@@ -1,4 +1,4 @@
-// Command itkctl is the ITK Cloud administration CLI used by the installer
+// Command itkctl is the Jenderal Cloud OS administration CLI used by the installer
 // and operators: database migrations, bootstrap of the first administrator,
 // secret generation, backup key management and offline restore.
 package main
@@ -33,7 +33,7 @@ import (
 
 var version = "dev"
 
-const usage = `itkctl - ITK Cloud administration
+const usage = `itkctl - Jenderal Cloud OS administration
 
 Usage:
   itkctl migrate [status]                 Apply (or show) database migrations
@@ -328,7 +328,7 @@ func cmdRestore(args []string) error {
 		return err
 	}
 	if !*yes {
-		fmt.Println("This will OVERWRITE the ITK Cloud platform database with the backup contents.")
+		fmt.Println("This will OVERWRITE the Jenderal Cloud OS platform database with the backup contents.")
 		fmt.Println("Stop itk-cloud-api and itk-cloud-worker first (systemctl stop itk-cloud-api itk-cloud-worker).")
 		fmt.Print("Type RESTORE to continue: ")
 		var answer string

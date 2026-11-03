@@ -1,6 +1,6 @@
-# ITK Cloud API contract
+# Jenderal Cloud OS API contract
 
-`openapi.yaml` is the OpenAPI 3.1 contract of the ITK Cloud REST API (`/api/v1`) and the
+`openapi.yaml` is the OpenAPI 3.1 contract of the Jenderal Cloud OS REST API (`/api/v1`) and the
 health probes (`/health/live`, `/health/ready`). It documents every route registered in
 [`internal/app/api.go`](../../internal/app/api.go).
 

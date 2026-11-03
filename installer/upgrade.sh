@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upgrade an existing ITK Cloud installation to the release this script
+# Upgrade an existing Jenderal Cloud OS installation to the release this script
 # belongs to.
 #
 #   sudo ./installer/upgrade.sh [--yes] [--skip-backup]
@@ -30,11 +30,11 @@ done
 export ASSUME_YES
 require_root
 
-[ -L "$ITK_PREFIX/current" ] || die "ITK Cloud is not installed (no $ITK_PREFIX/current). Use install.sh."
+[ -L "$ITK_PREFIX/current" ] || die "Jenderal Cloud OS is not installed (no $ITK_PREFIX/current). Use install.sh."
 CURRENT_DIR="$(readlink -f "$ITK_PREFIX/current")"
 CURRENT="$(itk_version "$CURRENT_DIR")"
 TARGET="$(itk_version "$SRC")"
-log "Upgrading ITK Cloud: $CURRENT → $TARGET"
+log "Upgrading Jenderal Cloud OS: $CURRENT → $TARGET"
 [ "$CURRENT" != "$TARGET" ] || { confirm "Version $TARGET is already installed. Reinstall it?" || exit 0; }
 if [ "$(printf '%s\n%s\n' "$CURRENT" "$TARGET" | sort -V | tail -1)" != "$TARGET" ]; then
 	warn "Target $TARGET is older than the installed $CURRENT (downgrade)."

@@ -58,7 +58,9 @@
 
 	function download() {
 		const blob = new Blob(
-			[`ITK Cloud recovery codes for ${auth.me?.username}\n\n${recoveryCodes.join('\n')}\n`],
+			[
+				`Jenderal Cloud OS recovery codes for ${auth.me?.username}\n\n${recoveryCodes.join('\n')}\n`
+			],
 			{ type: 'text/plain' }
 		);
 		const a = document.createElement('a');
@@ -69,7 +71,7 @@
 	}
 </script>
 
-<svelte:head><title>Set up two-factor authentication · ITK Cloud</title></svelte:head>
+<svelte:head><title>Set up two-factor authentication · Jenderal Cloud OS</title></svelte:head>
 
 {#if recoveryCodes.length}
 	<h1 class="text-xl font-semibold">Save your recovery codes</h1>

@@ -56,7 +56,7 @@ func EnsureUser(ctx context.Context, linuxUser, home, group, workspaceID string)
 		return ids(u)
 	}
 	if err := run(ctx, "useradd", "--no-create-home", "--home-dir", home, "--shell", "/bin/bash",
-		"--gid", group, "--comment", "ITK Cloud workspace "+workspaceID, linuxUser); err != nil {
+		"--gid", group, "--comment", "Jenderal Cloud OS workspace "+workspaceID, linuxUser); err != nil {
 		return agentproto.NativeUser{}, err
 	}
 	u, err := user.Lookup(linuxUser)

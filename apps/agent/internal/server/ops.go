@@ -292,7 +292,7 @@ func (s *Server) containerCreate(ctx context.Context, c *agentproto.ContainerCre
 		key := strconv.Itoa(p.Port) + "/tcp"
 		exposed[key] = map[string]any{}
 		// Published on loopback only: reachable through the authenticated
-		// ITK Cloud proxy, never directly from the LAN.
+		// Jenderal Cloud OS proxy, never directly from the LAN.
 		bindings[key] = []map[string]string{{"HostIp": "127.0.0.1", "HostPort": ""}}
 	}
 	secOpts := []string{"no-new-privileges:true"}
@@ -378,7 +378,7 @@ func (s *Server) resolveContainer(ctx context.Context, ref *agentproto.Container
 			return "", err
 		}
 		if cj.Config.Labels[labelManaged] != "true" || cj.Config.Labels[labelContainer] != ref.ContainerID {
-			return "", &agentproto.Error{Code: agentproto.ErrCodeForbidden, Message: "container is not managed by ITK Cloud"}
+			return "", &agentproto.Error{Code: agentproto.ErrCodeForbidden, Message: "container is not managed by Jenderal Cloud OS"}
 		}
 		return cj.ID, nil
 	}
@@ -569,7 +569,7 @@ func (s *Server) emergencyStopAll(ctx context.Context) (map[string]any, error) {
 	return map[string]any{"stopped": stopped, "failed": failed, "native_sessions_stopped": nativeStopped}, nil
 }
 
-// attributeGPUProcesses maps GPU compute processes to ITK Cloud containers
+// attributeGPUProcesses maps GPU compute processes to Jenderal Cloud OS containers
 // using the process cgroup and the managed-container labels.
 func (s *Server) attributeGPUProcesses(ctx context.Context, inv *agentproto.GPUInventory) {
 	hasProcs := false

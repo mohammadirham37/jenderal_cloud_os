@@ -1,4 +1,4 @@
-# Developing ITK Cloud
+# Developing Jenderal Cloud OS
 
 This guide sets up a local development environment (Linux or macOS), runs the stack, and
 runs the test suites. Production installation is described in [installation.md](installation.md).

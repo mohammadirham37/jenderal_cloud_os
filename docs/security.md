@@ -1,6 +1,6 @@
-# ITK Cloud security
+# Jenderal Cloud OS security
 
-This document is the threat model and the catalogue of security controls of ITK Cloud, with
+This document is the threat model and the catalogue of security controls of Jenderal Cloud OS, with
 references to the code that implements them, followed by known limitations and the
 production release checklist (spec §30). It describes what is implemented — not intentions.
 

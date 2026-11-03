@@ -83,12 +83,12 @@
 		<span
 			class="relative flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-signal to-[#c2410c] font-display text-[13px] font-bold text-white shadow-[0_0_18px_-2px_rgba(255,122,26,0.65)]"
 		>
-			IT
+			JC
 			<span
 				class="absolute -top-0.5 -right-0.5 size-2 rounded-full border border-[#111821] bg-emerald-400"
 			></span>
 		</span>
-		<span class="hidden font-display text-sm font-semibold tracking-wide sm:inline">ITK</span>
+		<span class="hidden font-display text-sm font-semibold tracking-wide sm:inline">Jenderal</span>
 	</button>
 	<button
 		class="hidden h-9 w-52 items-center gap-2 rounded-xl bg-white/6 px-3 text-left text-sm text-white/45 ring-1 ring-white/8 transition hover:bg-white/10 lg:flex"

@@ -66,7 +66,8 @@
 <div class="max-w-xl space-y-4">
 	{#if required}
 		<Alert tone="warning" title="A new password is required">
-			Your administrator requires you to set a new password before you can continue using ITK Cloud.
+			Your administrator requires you to set a new password before you can continue using Jenderal
+			Cloud OS.
 		</Alert>
 	{/if}
 

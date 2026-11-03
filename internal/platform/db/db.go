@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -32,7 +33,9 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
 	}
-	if cfg.MaxConns < 10 {
+	// Default to 20 connections unless the URL sets pool_max_conns (small
+	// servers lower it).
+	if !strings.Contains(url, "pool_max_conns") {
 		cfg.MaxConns = 20
 	}
 	cfg.MaxConnIdleTime = 5 * time.Minute

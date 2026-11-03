@@ -1,5 +1,5 @@
 [Unit]
-Description=ITK Cloud background worker (jobs, metrics, alerts, backups)
+Description=Jenderal Cloud OS background worker (jobs, metrics, alerts, backups)
 Documentation=file:///opt/itk-cloud/docs/operations.md
 After=network-online.target postgresql.service redis-server.service itk-cloud-agent.service
 Wants=network-online.target

@@ -15,7 +15,7 @@ class ConfigState {
 	}
 
 	get name(): string {
-		return this.value?.platform_name ?? 'ITK Cloud';
+		return this.value?.platform_name ?? 'Jenderal Cloud OS';
 	}
 }
 

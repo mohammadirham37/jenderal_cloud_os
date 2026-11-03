@@ -1,7 +1,7 @@
 // Package appproxy exposes web apps running inside workspace containers
 // (e.g. JupyterLab) through an authenticated reverse proxy. It is served
 // only on a dedicated origin (APP_PROXY_ORIGIN) so that scripts from
-// untrusted workspace apps cannot read ITK Cloud API responses or CSRF
+// untrusted workspace apps cannot read Jenderal Cloud OS API responses or CSRF
 // tokens. Container ports are published on host loopback only.
 package appproxy
 
@@ -132,7 +132,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// stripPlatformCredentials removes the ITK Cloud session cookie and CSRF
+// stripPlatformCredentials removes the Jenderal Cloud OS session cookie and CSRF
 // header so they are never forwarded to user workloads.
 func stripPlatformCredentials(r *http.Request) {
 	r.Header.Del(auth.CSRFHeader)

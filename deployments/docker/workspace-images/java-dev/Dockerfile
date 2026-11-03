@@ -1,4 +1,4 @@
-# ITK Cloud workspace image: java-dev
+# Jenderal Cloud OS workspace image: java-dev
 FROM eclipse-temurin:21-jdk-noble
 ARG DEBIAN_FRONTEND=noninteractive
 USER root

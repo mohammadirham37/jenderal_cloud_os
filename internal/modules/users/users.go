@@ -630,8 +630,8 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) error {
 	if h.Mail.Enabled() {
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 		defer cancel()
-		emailed = h.Mail.Send(sctx, email, "ITK Cloud - Reset kata sandi",
-			"Halo "+fullName+",\n\nAdministrator telah meminta reset kata sandi akun ITK Cloud Anda. Tautan (berlaku 1 jam):\n\n"+link+"\n") == nil
+		emailed = h.Mail.Send(sctx, email, "Jenderal Cloud OS - Reset kata sandi",
+			"Halo "+fullName+",\n\nAdministrator telah meminta reset kata sandi akun Jenderal Cloud OS Anda. Tautan (berlaku 1 jam):\n\n"+link+"\n") == nil
 	}
 	return httpx.OK(w, map[string]any{"reset_link": link, "expires_in_seconds": int(auth.ResetTokenTTL.Seconds()), "emailed": emailed})
 }
