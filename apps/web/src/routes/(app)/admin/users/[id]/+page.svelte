@@ -1,4 +1,6 @@
 <script lang="ts">
+	import QuotaWorkspaces from '#lib/components/workspaces/QuotaWorkspaces.svelte';
+	import type { MyUsage } from '#lib/api/types-workspaces.ts';
 	import { KeyRound, Play, ShieldOff, UserX } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import {
@@ -17,7 +19,7 @@
 	} from '#lib/components/ui/index.ts';
 	import { api, errorMessage } from '#lib/api/client.ts';
 	import { resource } from '#lib/api/resource.svelte.ts';
-	import type { AuditLog, Quota, Role, Usage, User } from '#lib/api/types.ts';
+	import type { AuditLog, Quota, Role, User } from '#lib/api/types.ts';
 	import type { ResetPasswordResponse } from '#lib/api/types-admin.ts';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { confirmDialog } from '#lib/stores/confirm.svelte.ts';
@@ -39,9 +41,7 @@
 	const quotas = resource(
 		guarded(['quotas.view', 'quotas.manage'], () => api.get<Quota[]>('/quotas'))
 	);
-	const usage = resource(
-		guarded(['users.view'], () => api.get<{ quota: Quota; usage: Usage }>(`/users/${id}/usage`))
-	);
+	const usage = resource(guarded(['users.view'], () => api.get<MyUsage>(`/users/${id}/usage`)));
 	const audit = resource(
 		guarded(['audit.view'], () =>
 			api.list<AuditLog>('/admin/audit-logs', { actor_id: id, per_page: 20 })
@@ -486,6 +486,14 @@
 						{us.containers} containers · {us.terminal_sessions} terminal sessions · {us.active_gpu_allocations}
 						GPU allocations · {bytes(us.used_storage_bytes)} storage used
 					</p>
+					<h3 class="mt-4 mb-1 text-xs font-medium tracking-wide text-fg-muted uppercase">
+						Storage by workspace
+					</h3>
+					<QuotaWorkspaces
+						workspaces={usage.data.workspaces ?? []}
+						storageQuota={q.storage_bytes}
+						ondeleted={() => usage.reload()}
+					/>
 				{/if}
 			</Card>
 		</div>

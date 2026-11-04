@@ -41,6 +41,7 @@ var Schema = []Def{
 	{Key: "security.lockout_minutes", Type: "int", Default: 15, Min: 1, Max: 1440, Category: "security", Description: "Lockout duration in minutes"},
 	{Key: "quota.default_package", Type: "string", Default: "basic", Max: 63, Category: "quota", Description: "Quota package key assigned to users without an explicit package"},
 	{Key: "workspaces.idle_stop_enabled", Type: "bool", Default: true, Category: "workspaces", Description: "Automatically stop idle workspaces"},
+	{Key: "workspaces.default_storage_cap_mb", Type: "int", Default: 0, Min: 0, Max: 1048576, Category: "workspaces", Description: "Largest storage (MiB) pre-filled for a new workspace; 0 uses the template default. Small servers use 2048"},
 	{Key: "workspaces.max_per_user_hard_limit", Type: "int", Default: 20, Min: 1, Max: 200, Category: "workspaces", Description: "Absolute maximum workspaces per user"},
 	{Key: "scheduler.cpu_overcommit_pct", Type: "int", Default: 200, Min: 100, Max: 1000, Category: "scheduler", Description: "Total CPU that may be allocated to running workloads, as % of host threads"},
 	{Key: "gpu.release_after_stopped_minutes", Type: "int", Default: 60, Min: 5, Max: 10080, Category: "gpu", Description: "Release GPU allocations of workspaces stopped longer than this"},

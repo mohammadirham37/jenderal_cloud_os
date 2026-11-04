@@ -4292,10 +4292,30 @@ components:
       properties:
         data:
           type: object
-          required: [quota, usage]
+          required: [quota, usage, workspaces, default_storage_cap_bytes]
           properties:
             quota: { $ref: '#/components/schemas/Quota' }
             usage: { $ref: '#/components/schemas/Usage' }
+            workspaces:
+              type: array
+              description: Workspaces counted toward the quota, largest storage allocation first.
+              items: { $ref: '#/components/schemas/UsageWorkspace' }
+            default_storage_cap_bytes:
+              type: integer
+              format: int64
+              description: Cap on the storage pre-filled for new workspaces (workspaces.default_storage_cap_mb); 0 means the template default.
+    UsageWorkspace:
+      type: object
+      required: [id, name, status, template_name, storage_bytes, storage_used_bytes, cpu_millis, memory_bytes]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string }
+        template_name: { type: string }
+        storage_bytes: { type: integer, format: int64 }
+        storage_used_bytes: { type: [integer, 'null'], format: int64 }
+        cpu_millis: { type: integer }
+        memory_bytes: { type: integer, format: int64 }
     DashboardSummary:
       type: object
       properties:

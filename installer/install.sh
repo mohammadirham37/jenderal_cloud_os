@@ -487,6 +487,10 @@ ok "Units installed"
 # ---------------------------------------------------------------------------
 log "Running database migrations"
 run_itkctl migrate | sed 's/^/  /'
+if [ "$SMALL" = 1 ]; then
+	# Pre-fill at most 2 GiB of storage for new workspaces (admins can change it in Settings).
+	sudo -u postgres psql -q -d itk_cloud -c "INSERT INTO platform_settings (key, value) VALUES ('workspaces.default_storage_cap_mb', '2048') ON CONFLICT (key) DO NOTHING" >/dev/null
+fi
 log "Starting services"
 systemctl enable itk-cloud.target "${SERVICES_START_ORDER[@]}" >/dev/null 2>&1
 for s in "${SERVICES_START_ORDER[@]}"; do

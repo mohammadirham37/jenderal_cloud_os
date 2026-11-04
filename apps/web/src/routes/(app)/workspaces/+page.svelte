@@ -17,6 +17,10 @@
 		Switch
 	} from '#lib/components/ui/index.ts';
 	import ResourceSummary from '#lib/components/workspaces/ResourceSummary.svelte';
+	import QuotaWorkspaces from '#lib/components/workspaces/QuotaWorkspaces.svelte';
+	import type { MyUsage } from '#lib/api/types-workspaces.ts';
+	import { Meter } from '#lib/components/ui/index.ts';
+	import { bytes } from '#lib/format.ts';
 	import {
 		WORKSPACE_STATUSES,
 		canOperate,
@@ -54,12 +58,21 @@
 		})
 	);
 	const rows = $derived(list.data?.data ?? []);
+	const usage = resource(() => api.get<MyUsage>('/me/usage'));
+	let showQuota = $state(false);
+	const failedCount = $derived(
+		usage.data?.workspaces.filter((w) => w.status === 'failed').length ?? 0
+	);
 	const anyBusy = $derived(rows.some(isWorkspaceBusy));
 
 	$effect(() => {
 		const ms = anyBusy ? 5000 : 30000;
 		const t = setInterval(() => {
-			if (document.visibilityState === 'visible') untrack(() => list.reload());
+			if (document.visibilityState === 'visible')
+				untrack(() => {
+					list.reload();
+					usage.reload();
+				});
 		}, ms);
 		return () => clearInterval(t);
 	});
@@ -116,6 +129,50 @@
 		{/if}
 	{/snippet}
 </PageHeader>
+
+{#if usage.data}
+	{@const u = usage.data}
+	<Card class="mb-4">
+		<div class="flex flex-wrap items-end gap-4">
+			<div class="min-w-56 flex-1">
+				<Meter
+					label="My storage quota ({u.quota.name})"
+					value={u.usage.allocated_storage_bytes}
+					max={u.quota.storage_bytes}
+					display="{bytes(u.usage.allocated_storage_bytes)} reserved of {bytes(
+						u.quota.storage_bytes
+					)}"
+				/>
+			</div>
+			<p class="text-xs text-fg-muted">
+				{u.usage.workspaces} of {u.quota.max_workspaces} workspaces · {bytes(
+					u.usage.used_storage_bytes
+				)} actually used
+			</p>
+			<Button
+				size="sm"
+				variant={failedCount > 0 ? 'primary' : 'ghost'}
+				onclick={() => (showQuota = !showQuota)}
+				aria-expanded={showQuota}
+			>
+				{showQuota ? 'Hide' : 'Show'} what uses storage{#if failedCount > 0}
+					({failedCount} failed){/if}
+			</Button>
+		</div>
+		{#if showQuota || failedCount > 0}
+			<div class="mt-4 border-t border-border pt-3">
+				<QuotaWorkspaces
+					workspaces={u.workspaces}
+					storageQuota={u.quota.storage_bytes}
+					ondeleted={() => {
+						usage.reload();
+						list.reload();
+					}}
+				/>
+			</div>
+		{/if}
+	</Card>
+{/if}
 
 <Card padded={false}>
 	<div class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">

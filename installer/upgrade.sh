@@ -96,6 +96,11 @@ ensure_update_dirs
 log "Running database migrations"
 run_itkctl migrate | sed 's/^/  /' || rollback
 
+# Small-server installs: cap the storage pre-filled for new workspaces at 2 GiB (0.1.9).
+if compgen -G "/etc/postgresql/*/main/conf.d/90-itk-cloud-small.conf" >/dev/null; then
+	sudo -u postgres psql -q -d itk_cloud -c "INSERT INTO platform_settings (key, value) VALUES ('workspaces.default_storage_cap_mb', '2048') ON CONFLICT (key) DO NOTHING" >/dev/null || true
+fi
+
 # --- rebrand: workspace images itk-cloud/<name> -> jenderal/<name> (0.1.6) ---
 if command -v docker >/dev/null 2>&1; then
 	docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^itk-cloud/' | while read -r old; do

@@ -102,6 +102,50 @@ type Usage struct {
 	ActiveGPUs       int   `json:"active_gpu_allocations"`
 }
 
+// CapDefaultStorage limits a template's default storage to the configured cap
+// (MiB; 0 = no cap). It never goes below the 256 MiB workspace minimum.
+func CapDefaultStorage(def int64, capMB int) int64 {
+	if capMB <= 0 {
+		return def
+	}
+	c := max(int64(capMB)<<20, 256<<20)
+	return min(def, c)
+}
+
+// UsageWorkspace is one workspace counted toward a user's quota.
+type UsageWorkspace struct {
+	ID               uuid.UUID `json:"id"`
+	Name             string    `json:"name"`
+	Status           string    `json:"status"`
+	TemplateName     string    `json:"template_name"`
+	StorageBytes     int64     `json:"storage_bytes"`
+	StorageUsedBytes *int64    `json:"storage_used_bytes"`
+	CPUMillis        int       `json:"cpu_millis"`
+	MemoryBytes      int64     `json:"memory_bytes"`
+}
+
+// UsageWorkspaces lists the workspaces that count toward a user's quota,
+// largest storage allocation first.
+func (s *Service) UsageWorkspaces(ctx context.Context, q db.Querier, userID uuid.UUID) ([]UsageWorkspace, error) {
+	rows, err := q.Query(ctx, `SELECT w.id, w.name, w.status, coalesce(t.name, ''), w.storage_bytes, w.storage_used_bytes,
+		w.cpu_millis, w.memory_bytes
+		FROM workspaces w LEFT JOIN workspace_templates t ON t.id = w.template_id
+		WHERE w.owner_id=$1 AND `+liveWorkspace+` ORDER BY w.storage_bytes DESC, w.created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []UsageWorkspace{}
+	for rows.Next() {
+		var u UsageWorkspace
+		if err := rows.Scan(&u.ID, &u.Name, &u.Status, &u.TemplateName, &u.StorageBytes, &u.StorageUsedBytes, &u.CPUMillis, &u.MemoryBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // Live workspace statuses that count toward quotas.
 const liveWorkspace = `w.status NOT IN ('deleted','deleting')`
 
@@ -538,5 +582,13 @@ func (h *Handler) usageFor(w http.ResponseWriter, r *http.Request, userID uuid.U
 	if err != nil {
 		return err
 	}
-	return httpx.OK(w, map[string]any{"quota": q, "usage": u})
+	ws, err := h.Svc.UsageWorkspaces(ctx, h.Svc.Pool, userID)
+	if err != nil {
+		return err
+	}
+	capMB := h.Svc.Settings.Int(ctx, "workspaces.default_storage_cap_mb")
+	return httpx.OK(w, map[string]any{
+		"quota": q, "usage": u, "workspaces": ws,
+		"default_storage_cap_bytes": int64(capMB) << 20,
+	})
 }

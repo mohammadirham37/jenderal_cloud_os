@@ -230,6 +230,8 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Workspace, error)
 		}
 		if in.StorageBytes != nil {
 			storage = *in.StorageBytes
+		} else {
+			storage = resources.CapDefaultStorage(storage, s.Settings.Int(ctx, "workspaces.default_storage_cap_mb"))
 		}
 		quota, err := s.Resources.UserQuota(ctx, tx, ownerID)
 		if err != nil {

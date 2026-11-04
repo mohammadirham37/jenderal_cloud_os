@@ -7,6 +7,22 @@ import type { Container, HistoryPoint, Quota, Usage } from './types.ts';
 export interface MyUsage {
 	quota: Quota;
 	usage: Usage;
+	/** Workspaces counted toward the quota, largest storage first. */
+	workspaces: UsageWorkspace[];
+	/** Cap on the storage pre-filled for new workspaces (0 = template default). */
+	default_storage_cap_bytes: number;
+}
+
+/** One workspace in GET /me/usage (or /users/{id}/usage). */
+export interface UsageWorkspace {
+	id: string;
+	name: string;
+	status: string;
+	template_name: string;
+	storage_bytes: number;
+	storage_used_bytes: number | null;
+	cpu_millis: number;
+	memory_bytes: number;
 }
 
 /** GET /users/lookup?q= */

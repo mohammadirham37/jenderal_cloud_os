@@ -6,6 +6,7 @@
 	import { resource } from '#lib/api/resource.svelte.ts';
 	import type { Project, Template, Workspace } from '#lib/api/types.ts';
 	import type { MyUsage } from '#lib/api/types-workspaces.ts';
+	import QuotaWorkspaces from '#lib/components/workspaces/QuotaWorkspaces.svelte';
 	import {
 		Alert,
 		Button,
@@ -101,7 +102,13 @@
 		if (!quota) return;
 		cpu = clamp(t.rec_cpu_millis, t.min_cpu_millis, quota.cpu_millis) / 1000;
 		memory = fromUnits(clamp(t.rec_memory_bytes, t.min_memory_bytes, quota.memory_bytes), GiB);
-		const st = clamp(t.default_storage_bytes, 256 * 1024 ** 2, Math.max(remainingStorage, 0));
+		// Small servers cap the pre-filled storage (workspaces.default_storage_cap_mb).
+		const cap = usage.data?.default_storage_cap_bytes ?? 0;
+		const def =
+			cap > 0
+				? Math.min(t.default_storage_bytes, Math.max(cap, 256 * 1024 ** 2))
+				: t.default_storage_bytes;
+		const st = clamp(def, 256 * 1024 ** 2, Math.max(remainingStorage, 0));
 		storage = fromUnits(st, GiB);
 	}
 
@@ -279,6 +286,21 @@
 					Delete an unused workspace or ask an administrator for a larger quota.
 				</Alert>
 			</div>
+		{/if}
+		{#if (remainingWorkspaces === 0 || remainingStorage < 1024 ** 3) && usage.data.workspaces.length > 0}
+			<details
+				class="mb-4 rounded-md border border-border px-4 py-2"
+				open={remainingStorage < 256 * 1024 ** 2 || remainingWorkspaces === 0}
+			>
+				<summary class="cursor-pointer text-sm font-medium text-fg">What uses my quota?</summary>
+				<div class="mt-2">
+					<QuotaWorkspaces
+						workspaces={usage.data.workspaces}
+						storageQuota={quota.storage_bytes}
+						ondeleted={() => usage.reload()}
+					/>
+				</div>
+			</details>
 		{/if}
 	{/if}
 
