@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Bell, Menu, Moon, Search, Sun, Monitor, LogOut, User } from '@lucide/svelte';
+	import { Bell, Menu, Moon, Search, Sun, Monitor, LogOut, User, AppWindow } from '@lucide/svelte';
+	import { setUiMode } from '#lib/stores/uimode.ts';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { theme } from '#lib/stores/theme.svelte.ts';
 	import { notificationCounter } from '#lib/stores/notifications.svelte.ts';
@@ -92,6 +93,15 @@
 	>
 		<span class="size-2 rounded-full {serverColor[server]}" aria-hidden="true"></span>
 		<span>{serverLabel[server]}</span>
+	</a>
+	<a
+		href="/"
+		data-sveltekit-reload
+		onclick={() => setUiMode('desktop')}
+		class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs font-medium text-fg-muted hover:border-accent hover:text-fg"
+		title="Switch to OS mode (desktop with windows)"
+	>
+		<AppWindow class="size-4" aria-hidden="true" /><span class="hidden sm:inline">OS mode</span>
 	</a>
 	<a
 		href="/notifications"

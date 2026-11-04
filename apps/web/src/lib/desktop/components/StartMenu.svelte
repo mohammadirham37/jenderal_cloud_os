@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setUiMode } from '#lib/stores/uimode.ts';
 	import { LayoutPanelLeft, LogOut, Monitor, Moon, Search, Sun } from '@lucide/svelte';
 	import { categories, visibleApps, type DesktopApp } from '../apps';
 	import { wallpapers } from '../wallpapers';
@@ -245,6 +246,7 @@
 				/>
 				<a
 					href="/dashboard"
+					onclick={() => setUiMode('classic')}
 					class="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-white/70 transition hover:bg-white/8 hover:text-white"
 				>
 					<LayoutPanelLeft class="size-4" /> Classic console

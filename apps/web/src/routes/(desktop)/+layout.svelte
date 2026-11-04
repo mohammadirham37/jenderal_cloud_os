@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { auth } from '#lib/stores/auth.svelte.ts';
+	import { getUiMode } from '#lib/stores/uimode.ts';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -21,6 +22,11 @@
 		const gate = auth.gate();
 		if (gate) {
 			await goto(gate, { replace: true });
+			return;
+		}
+		// The user chose the classic console last time.
+		if (getUiMode() === 'classic') {
+			await goto('/dashboard', { replace: true });
 			return;
 		}
 		ready = true;

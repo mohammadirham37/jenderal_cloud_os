@@ -5,9 +5,18 @@ import { resolve } from 'node:path';
 import { e2eAdmin, login } from './helpers.ts';
 import { TotpSource } from './totp.ts';
 
+// One TOTP source for the whole file: codes are single-use (replay protection).
+let shared: (ReturnType<typeof e2eAdmin> & { totp: TotpSource }) | undefined;
+function adminAccount() {
+	if (!shared) {
+		const st = JSON.parse(readFileSync(resolve(import.meta.dirname, '..', '..', '.dev', 'e2e', 'e2e-admin-mfa.json'), 'utf8'));
+		shared = { ...e2eAdmin(), totp: new TotpSource(st.secret, st.lastStep) };
+	}
+	return shared;
+}
+
 test('desktop shell opens apps in windows and restores the layout', async ({ page }) => {
-	const st = JSON.parse(readFileSync(resolve(import.meta.dirname, '..', '..', '.dev', 'e2e', 'e2e-admin-mfa.json'), 'utf8'));
-	const admin = { ...e2eAdmin(), totp: new TotpSource(st.secret, st.lastStep) };
+	const admin = adminAccount();
 	const problems: string[] = [];
 	page.on('pageerror', (e) => problems.push(e.message));
 
@@ -84,4 +93,26 @@ test('desktop shell opens apps in windows and restores the layout', async ({ pag
 	await page.waitForTimeout(800);
 	await page.screenshot({ path: 'test-results/screens/desktop-4-fajar.png' });
 	expect(problems, problems.join('\n')).toEqual([]);
+});
+
+test('switches between OS mode and the classic console and remembers the choice', async ({ page }) => {
+	await login(page, adminAccount());
+	await expect(page.getByRole('navigation', { name: 'Taskbar' })).toBeVisible();
+
+	// OS mode → classic via the start menu.
+	await page.getByRole('button', { name: 'Start' }).click();
+	await page.getByRole('link', { name: 'Classic console' }).click();
+	await expect(page).toHaveURL(/\/dashboard$/);
+	await expect(page.getByRole('link', { name: 'OS mode' })).toBeVisible();
+
+	// The choice is remembered: opening "/" stays in the classic console.
+	await page.goto('/');
+	await expect(page).toHaveURL(/\/dashboard$/);
+	await expect(page.getByRole('link', { name: 'OS mode' })).toBeVisible();
+
+	// Classic → OS mode via the top bar.
+	await page.getByRole('link', { name: 'OS mode' }).click();
+	await expect(page.getByRole('navigation', { name: 'Taskbar' })).toBeVisible();
+	await page.goto('/');
+	await expect(page.getByRole('navigation', { name: 'Taskbar' })).toBeVisible();
 });
