@@ -90,10 +90,12 @@
 								style:width="{pct(w.storage_bytes)}%"
 							></div>
 						</div>
-						<span class="w-40 shrink-0 text-right text-xs text-fg-muted tabular-nums">
+						<span
+							class="shrink-0 text-right text-xs whitespace-nowrap text-fg-muted tabular-nums sm:w-52"
+						>
 							<strong class="text-fg">{bytes(w.storage_bytes)}</strong>
 							reserved{#if w.storage_used_bytes !== null}
-								· {bytes(w.storage_used_bytes)} used{/if}
+								&nbsp;· {bytes(w.storage_used_bytes)} used{/if}
 						</span>
 					</div>
 					<p class="mt-0.5 text-xs text-fg-subtle">{w.template_name}</p>
